@@ -30,7 +30,7 @@
                 ]
         },
         "actions": {
-                "widget.honeycustom.view": { 
+                "widget.honey_custom.view": { 
                         "class": "WidgetView"
                 }
         },
