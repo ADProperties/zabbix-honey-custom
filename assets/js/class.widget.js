@@ -120,12 +120,15 @@ class CWidgetCustomHoney extends CWidget {
 	setContents(response) {
 		if (this.#honeycomb === null) {
 			const padding = {
-				vertical: CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
-				horizontal: CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H,
+				vertical: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
+				horizontal: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H,
 			};
 
 			this.#honeycomb = new CSVGCustomHoney(padding, response.config);
 			this._body.prepend(this.#honeycomb.getSVGElement());
+
+			// ---> A LINHA MÁGICA PARA ESCONDER AS BARRAS DE SCROLL <---
+			this._body.style.overflow = 'hidden';
 
 			this.#honeycomb.setSize(super._getContentsSize());
 
@@ -134,15 +137,7 @@ class CWidgetCustomHoney extends CWidget {
 					this.#selected_itemid = e.detail.itemid;
 					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
 
-					this.#broadcast();
-			});
-
-this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLICK, e => {
-					this.#selected_hostid = e.detail.hostid;
-					this.#selected_itemid = e.detail.itemid;
-					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
-
-					// Extrair os dados que queremos enviar para o Jira
+					// ---> A LÓGICA DO POP-UP E DO JIRA <---
 					const cellData = this.#cells_data.get(this.#selected_itemid);
 					const hostName = cellData.primary_label.replace(/\n/g, ' ').trim(); // Ex: CHLN
 					const itemValue = cellData.value; // Ex: 9
@@ -171,6 +166,11 @@ this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLIC
 					}
 
 					this.#broadcast();
+			});
+
+			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_ENTER, e => {
+				clearTimeout(this.#interacting_timeout_id);
+				this.#user_interacting = true;
 			});
 
 			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_LEAVE, e => {
@@ -328,8 +328,8 @@ this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLIC
 	#getItemsMaxCount() {
 		let {width, height} = super._getContentsSize();
 
-		width -= CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H * 2;
-		height -= CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V * 2;
+		width -= CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H * 2;
+		height -= CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V * 2;
 
 		const {max_rows, max_columns} = CSVGCustomHoney.getContainerMaxParams({width, height});
 
