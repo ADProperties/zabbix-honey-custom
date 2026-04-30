@@ -33,7 +33,7 @@ class JiraTicket extends CController {
         $jira_url = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
         //$jira_token = '';  // COLOCAR O TOKEN AQUI (Gerado no Jira -> Configurações de conta -> Segurança -> Tokens de API) 
-        
+        $jira_token = trim(stripslashes($jira_token));
         $project_key = 'GX';
         $issue_type = 'Monitorização';
         $confluence_page_id = '322404356';
