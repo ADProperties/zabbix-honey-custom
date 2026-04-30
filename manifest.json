@@ -1,0 +1,40 @@
+{
+        "manifest_version": 2.0,
+        "id": "honey_custom",
+        "type": "widget",
+        "name": "Custom Honey",
+        "namespace": "HoneyCustom",
+        "version": "1.0",
+        "author": "Zabbix",
+        "description": "Displays item values as a honeycomb with custom Jira logic.",
+        "url": "web_interface/frontend_sections/dashboards/widgets/honeycomb",
+        "widget": {
+                "size": {
+                        "width": 24,
+                        "height": 5
+                },
+                "js_class": "CWidgetCustomHoney", 
+                "in": {
+                        "hostids": {
+                                "type": "_hostids"
+                        },
+                        "groupids": {
+                                "type": "_hostgroupids"
+                        }
+                },
+                "out": [
+                        { "type": "_hostid" },
+                        { "type": "_hostids" },
+                        { "type": "_itemid" },
+                        { "type": "_itemids" }
+                ]
+        },
+        "actions": {
+                "widget.honeycustom.view": { 
+                        "class": "WidgetView"
+                }
+        },
+        "assets": {
+                "js": ["class.svghoneycomb.js", "class.widget.js"]
+        }
+}
