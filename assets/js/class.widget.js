@@ -137,9 +137,40 @@ class CWidgetCustomHoney extends CWidget {
 					this.#broadcast();
 			});
 
-			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_ENTER, e => {
-				clearTimeout(this.#interacting_timeout_id);
-				this.#user_interacting = true;
+this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLICK, e => {
+					this.#selected_hostid = e.detail.hostid;
+					this.#selected_itemid = e.detail.itemid;
+					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
+
+					// Extrair os dados que queremos enviar para o Jira
+					const cellData = this.#cells_data.get(this.#selected_itemid);
+					const hostName = cellData.primary_label.replace(/\n/g, ' ').trim(); // Ex: CHLN
+					const itemValue = cellData.value; // Ex: 9
+					const widgetName = this.getName(); // Ex: Quantidade de mensagens por processar...
+
+					// A Pergunta Mágica
+					const querCriar = confirm(`Deseja criar um ticket de Monitorização no Jira para ${hostName} com o valor atual de ${itemValue}?`);
+
+					if (querCriar) {
+						// Chamada interna ao nosso PHP para fazer a ponte com o Jira
+						fetch('zabbix.php?action=widget.honey_custom.jira', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								host: hostName,
+								value: itemValue,
+								widget: widgetName
+							})
+						})
+						.then(res => res.json())
+						.then(data => {
+							if(data.success) alert(data.message);
+							else alert("Erro: " + data.message);
+						})
+						.catch(err => alert("Erro na comunicação com o servidor Zabbix."));
+					}
+
+					this.#broadcast();
 			});
 
 			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_LEAVE, e => {

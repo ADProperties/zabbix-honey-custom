@@ -32,7 +32,10 @@
         "actions": {
                 "widget.honey_custom.view": { 
                         "class": "WidgetView"
-                }
+                },
+                "widget.honey_custom.jira": { 
+                        "class": "JiraTicket"
+                }               
         },
         "assets": {
                 "js": ["class.svghoneycomb.js", "class.widget.js"]
