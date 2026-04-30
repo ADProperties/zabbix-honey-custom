@@ -149,6 +149,16 @@ class JiraTicket extends CController {
         
         if ($httpCode >= 200 && $httpCode < 300) {
             $jiraData = json_decode($jiraResp, true);
+            
+            // --- INÍCIO DO REGISTO NO BLOCO DE NOTAS ---
+            $file = __DIR__ . '/../tickets.json';
+            $tickets = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
+            $tickets[$host] = [
+                'user' => CWebUser::$data['name'] . ' ' . CWebUser::$data['surname']
+            ];
+            file_put_contents($file, json_encode($tickets));
+            // --- FIM DO REGISTO ---
+
             echo json_encode([
                 'success' => true, 
                 'message' => "Ticket " . $jiraData['key'] . " criado com sucesso!"
@@ -159,7 +169,6 @@ class JiraTicket extends CController {
                 'message' => "Erro no Jira: " . $jiraResp
             ]);
         }
-        
-        exit(); // <-- Garante que o Zabbix não desenha o resto do HTML
+        exit();
     }
 }

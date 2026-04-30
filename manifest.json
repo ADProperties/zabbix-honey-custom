@@ -35,7 +35,10 @@
                 },
                 "widget.honey_custom.jira": { 
                         "class": "JiraTicket"
-                }               
+                },       
+        "widget.honey_custom.tickets": { 
+                        "class": "GetTickets"
+                }        
         },
         "assets": {
                 "js": ["class.svghoneycomb.js", "class.widget.js"]

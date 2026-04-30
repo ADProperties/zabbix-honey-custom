@@ -12,7 +12,6 @@
 ** If not, see <https://www.gnu.org/licenses/>.
 **/
 
-
 class CWidgetCustomHoney extends CWidget {
 
 	static ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V = 8;
@@ -117,7 +116,7 @@ class CWidgetCustomHoney extends CWidget {
 		};
 	}
 
-setContents(response) {
+	setContents(response) {
 		if (this.#honeycomb === null) {
 			const padding = {
 				vertical: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
@@ -126,7 +125,7 @@ setContents(response) {
 
 			this.#honeycomb = new CSVGCustomHoney(padding, response.config);
 			
-			// ---> O TRUQUE DEFINITIVO PARA MATAR AS BARRAS <---
+			// --- MATA-BARRAS ---
 			const svgElement = this.#honeycomb.getSVGElement();
 			svgElement.style.display = 'block';
 			svgElement.style.overflow = 'hidden';
@@ -136,37 +135,36 @@ setContents(response) {
 
 			this.#honeycomb.setSize(super._getContentsSize());
 
+			// --- CLIQUE PARA O JIRA ---
 			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLICK, e => {
 					this.#selected_hostid = e.detail.hostid;
 					this.#selected_itemid = e.detail.itemid;
 					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
 
-					// ---> A LÓGICA DO POP-UP E DO JIRA <---
 					const cellData = this.#cells_data.get(this.#selected_itemid);
 					const hostName = cellData.primary_label.replace(/\n/g, ' ').trim(); 
 					const itemValue = cellData.value; 
 					const widgetName = this.getName(); 
 
-					const querCriar = confirm(`Deseja criar um ticket de Monitorização no Jira para ${hostName} com o valor atual de ${itemValue}?`);
+					const querCriar = confirm(`Deseja criar um ticket no Jira para ${hostName}?`);
 
 					if (querCriar) {
 						fetch('zabbix.php?action=widget.honey_custom.jira', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({
-								host: hostName,
-								value: itemValue,
-								widget: widgetName
-							})
+							body: JSON.stringify({ host: hostName, value: itemValue, widget: widgetName })
 						})
 						.then(res => res.json())
 						.then(data => {
-							if(data.success) alert(data.message);
-							else alert("Erro: " + data.message);
+							if(data.success) {
+								alert(data.message);
+								this._startUpdating(); // Força o refresh para pintar de Azul imediatamente!
+							} else {
+								alert("Erro: " + data.message);
+							}
 						})
-						.catch(err => alert("Erro na comunicação com o servidor Zabbix."));
+						.catch(err => alert("Erro na comunicação."));
 					}
-
 					this.#broadcast();
 			});
 
@@ -182,40 +180,60 @@ setContents(response) {
 			});
 		}
 
-		this.#items_loaded_count = response.cells.length;
+		// --- FUNÇÃO PARA DESENHAR OS DADOS ---
+		const applyDataAndDraw = () => {
+			this.#items_loaded_count = response.cells.length;
+			this.#honeycomb.setValue({ cells: response.cells });
 
-		this.#honeycomb.setValue({
-			cells: response.cells
-		});
+			if (this.#items_loaded_count === 0) return;
 
-		if (this.#items_loaded_count === 0) {
-			return;
-		}
+			this.#cells_data.clear();
+			response.cells.forEach(cell => this.#cells_data.set(cell.itemid, cell));
 
-		this.#cells_data.clear();
-		response.cells.forEach(cell => this.#cells_data.set(cell.itemid, cell));
-
-		if (this.isReferred() && (this.isFieldsReferredDataUpdated() || !this.hasEverUpdated())) {
-			if (this.#selected_itemid === null || (!this.#hasSelectable() && !this.#selectItemidByKey())) {
-				const selected_cell = this.#getDefaultSelectable();
-
-				if (selected_cell !== null) {
-					this.#selected_hostid = selected_cell.hostid;
-					this.#selected_itemid = selected_cell.itemid;
-					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
+			if (this.isReferred() && (this.isFieldsReferredDataUpdated() || !this.hasEverUpdated())) {
+				if (this.#selected_itemid === null || (!this.#hasSelectable() && !this.#selectItemidByKey())) {
+					const selected_cell = this.#getDefaultSelectable();
+					if (selected_cell !== null) {
+						this.#selected_hostid = selected_cell.hostid;
+						this.#selected_itemid = selected_cell.itemid;
+						this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
+					}
 				}
-			}
-
-			this.#honeycomb.selectCell(this.#selected_itemid);
-			this.#broadcast();
-		}
-		else if (this.#selected_itemid !== null) {
-			if (!this.#hasSelectable() && this.#selectItemidByKey()) {
+				this.#honeycomb.selectCell(this.#selected_itemid);
 				this.#broadcast();
+			} else if (this.#selected_itemid !== null) {
+				if (!this.#hasSelectable() && this.#selectItemidByKey()) {
+					this.#broadcast();
+				}
+				this.#honeycomb.selectCell(this.#selected_itemid);
 			}
+		};
 
-			this.#honeycomb.selectCell(this.#selected_itemid);
-		}
+		// --- INTERCETAR E PINTAR COM BASE NO BLOCO DE NOTAS ---
+		const zeroHosts = response.cells
+			.filter(c => parseFloat(c.value) === 0)
+			.map(c => c.primary_label.replace(/\n/g, ' ').trim());
+
+		fetch('zabbix.php?action=widget.honey_custom.tickets', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ zero_hosts: zeroHosts })
+		})
+		.then(res => res.json())
+		.then(tickets => {
+			response.cells.forEach(cell => {
+				const hostName = cell.primary_label.replace(/\n/g, ' ').trim();
+				if (tickets[hostName] && parseFloat(cell.value) > 0) {
+					cell.bg_color = '2196F3'; // Azul estilo Zabbix
+					cell.primary_label += `\n👁️ ${tickets[hostName].user}`;
+				}
+			});
+			applyDataAndDraw();
+		})
+		.catch(err => {
+			// Em caso de erro do ficheiro, desenha o favo normalmente na mesma
+			applyDataAndDraw();
+		});
 	}
 
 	#selectItemidByKey() {
@@ -223,11 +241,9 @@ setContents(response) {
 			if (cell.key_ === this.#selected_key_) {
 				this.#selected_itemid = itemid;
 				this.#selected_hostid = cell.hostid;
-
 				return true;
 			}
 		}
-
 		return false;
 	}
 
@@ -282,7 +298,6 @@ setContents(response) {
 		if (type === CWidgetsData.DATA_TYPE_ITEM_ID) {
 			return this.#honeycomb.selectCell(value);
 		}
-
 		return false;
 	}
 
@@ -298,7 +313,6 @@ setContents(response) {
 		for (const search_menu_actions of menu) {
 			if ('label' in search_menu_actions && search_menu_actions.label === t('Actions')) {
 				menu_actions = search_menu_actions;
-
 				break;
 			}
 		}
@@ -308,7 +322,6 @@ setContents(response) {
 				label: t('Actions'),
 				items: []
 			};
-
 			menu.unshift(menu_actions);
 		}
 
