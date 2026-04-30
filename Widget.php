@@ -27,7 +27,7 @@ class Widget extends CWidget {
 	];
 
 	public function getDefaultName(): string {
-		return _('Honeycomb');
+    	return _('Custom Honey');
 	}
 
 	public function getTranslationStrings(): array {
