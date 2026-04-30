@@ -14,7 +14,7 @@
 **/
 
 
-use Widgets\Honeycomb\Includes\WidgetForm;
+use Modules\HoneyCustom\Includes\WidgetForm;
 
 ?>
 

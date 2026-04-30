@@ -19,7 +19,7 @@ class CWidgetCustomHoney extends CWidget {
 	static ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H = 10;
 
 	/**
-	 * @type {CSVGHoneycomb|null}
+	 * @type {CSVGCustomHoney|null}
 	 */
 	#honeycomb = null;
 
@@ -124,12 +124,12 @@ class CWidgetCustomHoney extends CWidget {
 				horizontal: CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H,
 			};
 
-			this.#honeycomb = new CSVGHoneycomb(padding, response.config);
+			this.#honeycomb = new CSVGCustomHoney(padding, response.config);
 			this._body.prepend(this.#honeycomb.getSVGElement());
 
 			this.#honeycomb.setSize(super._getContentsSize());
 
-			this.#honeycomb.getSVGElement().addEventListener(CSVGHoneycomb.EVENT_CELL_CLICK, e => {
+			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLICK, e => {
 					this.#selected_hostid = e.detail.hostid;
 					this.#selected_itemid = e.detail.itemid;
 					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
@@ -137,12 +137,12 @@ class CWidgetCustomHoney extends CWidget {
 					this.#broadcast();
 			});
 
-			this.#honeycomb.getSVGElement().addEventListener(CSVGHoneycomb.EVENT_CELL_ENTER, e => {
+			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_ENTER, e => {
 				clearTimeout(this.#interacting_timeout_id);
 				this.#user_interacting = true;
 			});
 
-			this.#honeycomb.getSVGElement().addEventListener(CSVGHoneycomb.EVENT_CELL_LEAVE, e => {
+			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_LEAVE, e => {
 				this.#interacting_timeout_id = setTimeout(() => {
 					this.#user_interacting = false;
 				}, 1000);
@@ -300,7 +300,7 @@ class CWidgetCustomHoney extends CWidget {
 		width -= CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H * 2;
 		height -= CWidgetHoneycomb.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V * 2;
 
-		const {max_rows, max_columns} = CSVGHoneycomb.getContainerMaxParams({width, height});
+		const {max_rows, max_columns} = CSVGCustomHoney.getContainerMaxParams({width, height});
 
 		return Math.min(this.#items_max_count, max_rows * max_columns);
 	}

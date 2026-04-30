@@ -13,7 +13,7 @@
 **/
 
 
-class CSVGHoneycomb {
+class CSVGCustomHoney {
 
 	static ZBX_COLOR_CELL_FILL_LIGHT =		'#a5c6d4';
 	static ZBX_COLOR_CELL_FILL_DARK =		'#668696';
@@ -183,16 +183,16 @@ class CSVGHoneycomb {
 		this.#config = config;
 		this.#padding = padding;
 
-		this.#svg_id = CSVGHoneycomb.#getUniqueId();
+		this.#svg_id = CSVGCustomHoney.#getUniqueId();
 
 		this.#svg = d3.create('svg')
 			.attr('id', this.#svg_id)
-			.attr('class', CSVGHoneycomb.ZBX_STYLE_CLASS)
+			.attr('class', CSVGCustomHoney.ZBX_STYLE_CLASS)
 			// Add filter element for shadow of popped cell.
 			.call(svg => svg
 				.append('defs')
 				.append('filter')
-				.attr('id', `${CSVGHoneycomb.ZBX_STYLE_CELL_SHADOW}-${this.#svg_id}`)
+				.attr('id', `${CSVGCustomHoney.ZBX_STYLE_CELL_SHADOW}-${this.#svg_id}`)
 				.attr('x', '-50%')
 				.attr('y', '-50%')
 				.attr('width', '200%')
@@ -210,8 +210,8 @@ class CSVGHoneycomb {
 
 		this.#honeycomb_container = this.#container
 			.append('g')
-			.attr('class', CSVGHoneycomb.ZBX_STYLE_HONEYCOMB_CONTAINER)
-			.style('--line-height', CSVGHoneycomb.LINE_HEIGHT);
+			.attr('class', CSVGCustomHoney.ZBX_STYLE_HONEYCOMB_CONTAINER)
+			.style('--line-height', CSVGCustomHoney.LINE_HEIGHT);
 
 		this.#cell_path = this.#generatePath(this.#cell_height, this.#cells_gap);
 		this.#canvas_context = document.createElement('canvas').getContext('2d');
@@ -262,7 +262,7 @@ class CSVGHoneycomb {
 		let has_selected = false;
 
 		this.#honeycomb_container
-			.selectAll(`g.${CSVGHoneycomb.ZBX_STYLE_CELL}`)
+			.selectAll(`g.${CSVGCustomHoney.ZBX_STYLE_CELL}`)
 			.each((d, i, cells) => {
 				const selected = d.itemid == itemid;
 
@@ -271,7 +271,7 @@ class CSVGHoneycomb {
 				}
 
 				d3.select(cells[i])
-					.classed(CSVGHoneycomb.ZBX_STYLE_CELL_SELECTED, selected)
+					.classed(CSVGCustomHoney.ZBX_STYLE_CELL_SELECTED, selected)
 					.style('--stroke-selected', d => this.#getStrokeColor(d, selected))
 			});
 
@@ -321,7 +321,7 @@ class CSVGHoneycomb {
 			};
 		};
 
-		const {max_rows, max_columns} = CSVGHoneycomb.getContainerMaxParams({width: this.#width, height: this.#height});
+		const {max_rows, max_columns} = CSVGCustomHoney.getContainerMaxParams({width: this.#width, height: this.#height});
 
 		this.#cells_max_count = this.#cells_data !== null
 			? Math.min(this.#cells_max_count_limit, this.#cells_data.length, max_rows * max_columns)
@@ -362,7 +362,7 @@ class CSVGHoneycomb {
 
 		this.#honeycomb_container
 			.style('--stroke-width', `${2 / this.#container_params.scale}px`)
-			.selectAll(`g.${CSVGHoneycomb.ZBX_STYLE_CELL}`)
+			.selectAll(`g.${CSVGCustomHoney.ZBX_STYLE_CELL}`)
 			.data(data, (d, i) => {
 				const row = Math.floor(i / this.#container_params.columns);
 				const column = i % this.#container_params.columns;
@@ -379,7 +379,7 @@ class CSVGHoneycomb {
 			.join(
 				enter => enter
 					.append('g')
-					.attr('class', CSVGHoneycomb.ZBX_STYLE_CELL)
+					.attr('class', CSVGCustomHoney.ZBX_STYLE_CELL)
 					.attr('data-index', d => d.index)
 					.style('--x', d => `${d.position.x}px`)
 					.style('--y', d => `${d.position.y}px`)
@@ -419,7 +419,7 @@ class CSVGHoneycomb {
 						}
 
 						cell.style('--stroke-selected', d => this.#getStrokeColor(d,
-							cell.classed(CSVGHoneycomb.ZBX_STYLE_CELL_SELECTED))
+							cell.classed(CSVGCustomHoney.ZBX_STYLE_CELL_SELECTED))
 						);
 					}),
 				exit => exit.remove()
@@ -433,9 +433,9 @@ class CSVGHoneycomb {
 	 */
 	#drawCellHasMore(cell) {
 		cell
-			.classed(CSVGHoneycomb.ZBX_STYLE_CELL_OTHER, true)
+			.classed(CSVGCustomHoney.ZBX_STYLE_CELL_OTHER, true)
 			.append('g')
-			.attr('class', CSVGHoneycomb.ZBX_STYLE_CELL_OTHER_ELLIPSIS)
+			.attr('class', CSVGCustomHoney.ZBX_STYLE_CELL_OTHER_ELLIPSIS)
 			.call(ellipsis => {
 				for (let i = -1; i <= 1; i++) {
 					ellipsis
@@ -451,7 +451,7 @@ class CSVGHoneycomb {
 	 */
 	#drawCellNoData(cell) {
 		cell
-			.classed(CSVGHoneycomb.ZBX_STYLE_CELL_NO_DATA, true)
+			.classed(CSVGCustomHoney.ZBX_STYLE_CELL_NO_DATA, true)
 			.call(cell => this.#drawNoDataLabel(cell));
 	}
 
@@ -460,7 +460,7 @@ class CSVGHoneycomb {
 			.call(cell => this.#drawLabel(cell))
 			.on('click', (e, d) => {
 				if (this.selectCell(d.itemid)) {
-					this.#svg.dispatch(CSVGHoneycomb.EVENT_CELL_CLICK, {
+					this.#svg.dispatch(CSVGCustomHoney.EVENT_CELL_CLICK, {
 						detail: {
 							hostid: d.hostid,
 							itemid: d.itemid
@@ -483,7 +483,7 @@ class CSVGHoneycomb {
 					}, 150);
 				}
 
-				this.#svg.dispatch(CSVGHoneycomb.EVENT_CELL_ENTER, {
+				this.#svg.dispatch(CSVGCustomHoney.EVENT_CELL_ENTER, {
 					detail: {
 						hostid: d.hostid,
 						itemid: d.itemid
@@ -506,7 +506,7 @@ class CSVGHoneycomb {
 					d.scaled = false;
 				}
 
-				this.#svg.dispatch(CSVGHoneycomb.EVENT_CELL_LEAVE, {
+				this.#svg.dispatch(CSVGCustomHoney.EVENT_CELL_LEAVE, {
 					detail: {
 						hostid: d.hostid,
 						itemid: d.itemid
@@ -551,10 +551,10 @@ class CSVGHoneycomb {
 			) - d.position.y
 		};
 
-		if (cell.select(`.${CSVGHoneycomb.ZBX_STYLE_BACKDROP}`).empty()) {
+		if (cell.select(`.${CSVGCustomHoney.ZBX_STYLE_BACKDROP}`).empty()) {
 			cell
 				.append('path')
-				.classed(CSVGHoneycomb.ZBX_STYLE_BACKDROP, true)
+				.classed(CSVGCustomHoney.ZBX_STYLE_BACKDROP, true)
 				.attr('d', this.#generatePath(Math.min(this.#cell_height * 1.75, scaled_size.height * .75), 0));
 		}
 		else {
@@ -572,7 +572,7 @@ class CSVGHoneycomb {
 		});
 
 		this.#svg
-			.select(`#${CSVGHoneycomb.ZBX_STYLE_CELL_SHADOW}-${this.#svg_id} feDropShadow`)
+			.select(`#${CSVGCustomHoney.ZBX_STYLE_CELL_SHADOW}-${this.#svg_id} feDropShadow`)
 			.attr('stdDeviation', 25 / this.#container_params.scale / cell_scale);
 
 		cell
@@ -582,14 +582,14 @@ class CSVGHoneycomb {
 			.style('--stroke-width', `${2 / this.#container_params.scale / cell_scale}px`)
 			.style('--scale', cell_scale)
 			.select('path')
-			.style('filter', `url(#${CSVGHoneycomb.ZBX_STYLE_CELL_SHADOW}-${this.#svg_id})`);
+			.style('filter', `url(#${CSVGCustomHoney.ZBX_STYLE_CELL_SHADOW}-${this.#svg_id})`);
 
 		this.#svg.style('--shadow-opacity', 1);
 	}
 
 	#leaveAll() {
 		this.#honeycomb_container
-			.selectAll(`g.${CSVGHoneycomb.ZBX_STYLE_CELL}`)
+			.selectAll(`g.${CSVGCustomHoney.ZBX_STYLE_CELL}`)
 			.each((d, i, cells) => {
 				if (d.enter_timeout !== undefined) {
 					clearTimeout(d.enter_timeout);
@@ -627,7 +627,7 @@ class CSVGHoneycomb {
 
 		d.backdrop_timeout = setTimeout(() => {
 			cell
-				.select(`.${CSVGHoneycomb.ZBX_STYLE_BACKDROP}`)
+				.select(`.${CSVGCustomHoney.ZBX_STYLE_BACKDROP}`)
 				.remove();
 		}, UI_TRANSITION_DURATION);
 	}
@@ -637,7 +637,7 @@ class CSVGHoneycomb {
 
 		const makeLabel = (label) => {
 			return d3.create('div')
-				.attr('class', CSVGHoneycomb.ZBX_STYLE_LABEL)
+				.attr('class', CSVGCustomHoney.ZBX_STYLE_LABEL)
 				.call(label_container => {
 					for (const line of label.lines.values()) {
 						label_container
@@ -650,18 +650,18 @@ class CSVGHoneycomb {
 		cell
 			.append('foreignObject')
 			.append('xhtml:div')
-			.attr('class', CSVGHoneycomb.ZBX_STYLE_CONTENT)
+			.attr('class', CSVGCustomHoney.ZBX_STYLE_CONTENT)
 			.call(container => {
 				if (this.#config.primary_label.show) {
 					container.append(d => makeLabel(d.labels.primary)
-						.classed(CSVGHoneycomb.ZBX_STYLE_LABEL_PRIMARY, true)
+						.classed(CSVGCustomHoney.ZBX_STYLE_LABEL_PRIMARY, true)
 						.node()
 					);
 				}
 
 				if (this.#config.secondary_label.show) {
 					container.append(d => makeLabel(d.labels.secondary)
-						.classed(CSVGHoneycomb.ZBX_STYLE_LABEL_SECONDARY, true)
+						.classed(CSVGCustomHoney.ZBX_STYLE_LABEL_SECONDARY, true)
 						.node()
 					);
 				}
@@ -673,18 +673,18 @@ class CSVGHoneycomb {
 	#drawNoDataLabel(cell) {
 		cell.call(cell => cell.select('foreignObject')?.remove());
 
-		if ((this.#cell_width - this.#cells_gap) * this.#container_params.scale < CSVGHoneycomb.LABEL_WIDTH_MIN) {
+		if ((this.#cell_width - this.#cells_gap) * this.#container_params.scale < CSVGCustomHoney.LABEL_WIDTH_MIN) {
 			return;
 		}
 
 		cell
 			.append('foreignObject')
 			.append('xhtml:div')
-			.attr('class', CSVGHoneycomb.ZBX_STYLE_CONTENT)
+			.attr('class', CSVGCustomHoney.ZBX_STYLE_CONTENT)
 			.append('span')
 			.text(t('No data'))
 			.style('font-size',
-				`${Math.max(CSVGHoneycomb.FONT_SIZE_MIN / this.#container_params.scale, this.#cell_width / 10)}px`
+				`${Math.max(CSVGCustomHoney.FONT_SIZE_MIN / this.#container_params.scale, this.#cell_width / 10)}px`
 			);
 
 		this.#resizeLabels(cell);
@@ -707,15 +707,15 @@ class CSVGHoneycomb {
 				.attr('width', box.width - this.#container_params.cell_padding * 2)
 				.attr('height', box.height)
 			)
-			.call(cell => cell.select(`.${CSVGHoneycomb.ZBX_STYLE_LABEL_PRIMARY}`)
-				.style('max-height', d => `${d.labels.primary.lines_count * CSVGHoneycomb.LINE_HEIGHT}em`)
+			.call(cell => cell.select(`.${CSVGCustomHoney.ZBX_STYLE_LABEL_PRIMARY}`)
+				.style('max-height', d => `${d.labels.primary.lines_count * CSVGCustomHoney.LINE_HEIGHT}em`)
 				.style('font-size', d => `${d.labels.primary.font_size}px`)
 				.style('font-weight', d => d.labels.primary.font_weight)
 				.style('color', d => d.labels.primary.color)
 
 			)
-			.call(cell => cell.select(`.${CSVGHoneycomb.ZBX_STYLE_LABEL_SECONDARY}`)
-				.style('max-height', d => `${d.labels.secondary.lines_count * CSVGHoneycomb.LINE_HEIGHT}em`)
+			.call(cell => cell.select(`.${CSVGCustomHoney.ZBX_STYLE_LABEL_SECONDARY}`)
+				.style('max-height', d => `${d.labels.secondary.lines_count * CSVGCustomHoney.LINE_HEIGHT}em`)
 				.style('font-size', d => `${d.labels.secondary.font_size}px`)
 				.style('font-weight', d => d.labels.secondary.font_weight)
 				.style('color', d => d.labels.secondary.color)
@@ -753,7 +753,7 @@ class CSVGHoneycomb {
 				};
 			}
 
-			if (container_width * this.#container_params.scale < CSVGHoneycomb.LABEL_WIDTH_MIN * .875) {
+			if (container_width * this.#container_params.scale < CSVGCustomHoney.LABEL_WIDTH_MIN * .875) {
 				return;
 			}
 
@@ -761,7 +761,7 @@ class CSVGHoneycomb {
 				if (is_custom_size) {
 					const label_height = container_height * this.#config[c_param].size / 100;
 					const temp_font_size = Math.max(
-						CSVGHoneycomb.FONT_SIZE_MIN / this.#container_params.scale,
+						CSVGCustomHoney.FONT_SIZE_MIN / this.#container_params.scale,
 						label_height / d.labels[d_param].lines_count
 					);
 
@@ -793,7 +793,7 @@ class CSVGHoneycomb {
 			for (const d of data) {
 				if (!d.labels[d_param].is_custom_size) {
 					d.labels[d_param].font_size = Math.max(
-						CSVGHoneycomb.FONT_SIZE_MIN / this.#container_params.scale,
+						CSVGCustomHoney.FONT_SIZE_MIN / this.#container_params.scale,
 						Math.min(
 							thresholds.get(d.labels[d_param].line_max_length),
 							Math.floor(container_height / d.labels[d_param].lines_count)
@@ -804,7 +804,7 @@ class CSVGHoneycomb {
 		}
 
 		const container_width = cell_width - this.#container_params.cell_padding * 2;
-		container_height /= CSVGHoneycomb.LINE_HEIGHT;
+		container_height /= CSVGCustomHoney.LINE_HEIGHT;
 
 		if (this.#config.primary_label.show) {
 			calculateLabelParams(data, container_width, container_height, true)
@@ -814,7 +814,7 @@ class CSVGHoneycomb {
 			calculateLabelParams(data, container_width, container_height, false)
 		}
 
-		const font_size_min = CSVGHoneycomb.FONT_SIZE_MIN / this.#container_params.scale;
+		const font_size_min = CSVGCustomHoney.FONT_SIZE_MIN / this.#container_params.scale;
 
 		for (const d of data) {
 			const {primary, secondary} = d.labels;
@@ -922,8 +922,8 @@ class CSVGHoneycomb {
 		const fill_color = d3.color(this.#getFillColor(d));
 
 		return document.documentElement.getAttribute('color-scheme') === ZBX_COLOR_SCHEME_LIGHT
-			? (fill_color ?? d3.color(CSVGHoneycomb.ZBX_COLOR_CELL_FILL_LIGHT)).darker(wide ? .6 : .3).formatHex()
-			: (fill_color ?? d3.color(CSVGHoneycomb.ZBX_COLOR_CELL_FILL_DARK)).brighter(wide ? 1 : .6).formatHex();
+			? (fill_color ?? d3.color(CSVGCustomHoney.ZBX_COLOR_CELL_FILL_LIGHT)).darker(wide ? .6 : .3).formatHex()
+			: (fill_color ?? d3.color(CSVGCustomHoney.ZBX_COLOR_CELL_FILL_DARK)).brighter(wide ? 1 : .6).formatHex();
 	}
 
 	/**
@@ -992,7 +992,7 @@ class CSVGHoneycomb {
 	}
 
 	#getFontSizeByWidth(lines, fit_width, font_weight = '') {
-		return Math.max(CSVGHoneycomb.FONT_SIZE_MIN / this.#container_params.scale,
+		return Math.max(CSVGCustomHoney.FONT_SIZE_MIN / this.#container_params.scale,
 			Math.min(...lines
 				.filter(line => line !== '')
 				.map(line => fit_width * .875 / this.#getMeasuredTextWidth(line, 10, font_weight) * 9)
@@ -1006,7 +1006,7 @@ class CSVGHoneycomb {
 	 * @returns {string}
 	 */
 	static #getUniqueId() {
-		return `CSVGHoneycomb-${this.ID_COUNTER++}`;
+		return `CSVGCustomHoney-${this.ID_COUNTER++}`;
 	}
 
 	/**
@@ -1018,8 +1018,8 @@ class CSVGHoneycomb {
 	 * @returns {{max_rows: number, max_columns: number}}
 	 */
 	static getContainerMaxParams({width, height}) {
-		const cell_min_width = CSVGHoneycomb.CELL_WIDTH_MIN;
-		const cell_min_height = CSVGHoneycomb.CELL_WIDTH_MIN / Math.sqrt(3) * 2;
+		const cell_min_width = CSVGCustomHoney.CELL_WIDTH_MIN;
+		const cell_min_height = CSVGCustomHoney.CELL_WIDTH_MIN / Math.sqrt(3) * 2;
 
 		const max_rows = Math.max(0, Math.floor((height - cell_min_height) / (cell_min_height * .75)) + 1);
 		const max_columns = Math.max(0, Math.floor((width - (max_rows > 1 ? cell_min_width / 2 : 0)) / cell_min_width));
