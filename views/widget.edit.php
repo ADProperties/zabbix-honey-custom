@@ -15,13 +15,13 @@
 
 
 /**
- * Honeycomb widget form view.
+ *  widget form view.
  *
  * @var CView $this
  * @var array $data
  */
 
-use Modules\HoneyCustom\Includes\WidgetForm;
+use Modules\HoneyCustom\Widget;
 
 $form = new CWidgetFormView($data);
 
