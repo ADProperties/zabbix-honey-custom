@@ -32,7 +32,7 @@ class JiraTicket extends CController {
         // =========================================================
         $jira_url = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
-        $jira_token = '39519b140c8c6c956c997aae143e47d1e646bdf334ffc1f86f983dd50298d92d';
+        $jira_token = 'ATATT3xFfGF0evDN3EZ51xvkFDz';
         
         $project_key = 'GX';
         $issue_type = 'Monitorização';
@@ -145,15 +145,21 @@ class JiraTicket extends CController {
         // =========================================================
         // 5. RESPOSTA AO POP-UP
         // =========================================================
+        header('Content-Type: application/json');
+        
         if ($httpCode >= 200 && $httpCode < 300) {
             $jiraData = json_decode($jiraResp, true);
-            $this->setResponse(new CControllerResponseData([
-                'main_block' => json_encode(['success' => true, 'message' => "Ticket " . $jiraData['key'] . " criado com sucesso!"])
-            ]));
+            echo json_encode([
+                'success' => true, 
+                'message' => "Ticket " . $jiraData['key'] . " criado com sucesso!"
+            ]);
         } else {
-            $this->setResponse(new CControllerResponseData([
-                'main_block' => json_encode(['success' => false, 'message' => "Erro no Jira: " . $jiraResp])
-            ]));
+            echo json_encode([
+                'success' => false, 
+                'message' => "Erro no Jira: " . $jiraResp
+            ]);
         }
+        
+        exit(); // <-- Garante que o Zabbix não desenha o resto do HTML
     }
 }
