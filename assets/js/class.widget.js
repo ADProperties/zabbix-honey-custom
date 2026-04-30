@@ -117,7 +117,7 @@ class CWidgetCustomHoney extends CWidget {
 		};
 	}
 
-	setContents(response) {
+setContents(response) {
 		if (this.#honeycomb === null) {
 			const padding = {
 				vertical: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
@@ -125,9 +125,13 @@ class CWidgetCustomHoney extends CWidget {
 			};
 
 			this.#honeycomb = new CSVGCustomHoney(padding, response.config);
-			this._body.prepend(this.#honeycomb.getSVGElement());
-
-			// ---> A LINHA MÁGICA PARA ESCONDER AS BARRAS DE SCROLL <---
+			
+			// ---> O TRUQUE DEFINITIVO PARA MATAR AS BARRAS <---
+			const svgElement = this.#honeycomb.getSVGElement();
+			svgElement.style.display = 'block';
+			svgElement.style.overflow = 'hidden';
+			
+			this._body.prepend(svgElement);
 			this._body.style.overflow = 'hidden';
 
 			this.#honeycomb.setSize(super._getContentsSize());
@@ -139,15 +143,13 @@ class CWidgetCustomHoney extends CWidget {
 
 					// ---> A LÓGICA DO POP-UP E DO JIRA <---
 					const cellData = this.#cells_data.get(this.#selected_itemid);
-					const hostName = cellData.primary_label.replace(/\n/g, ' ').trim(); // Ex: CHLN
-					const itemValue = cellData.value; // Ex: 9
-					const widgetName = this.getName(); // Ex: Quantidade de mensagens por processar...
+					const hostName = cellData.primary_label.replace(/\n/g, ' ').trim(); 
+					const itemValue = cellData.value; 
+					const widgetName = this.getName(); 
 
-					// A Pergunta Mágica
 					const querCriar = confirm(`Deseja criar um ticket de Monitorização no Jira para ${hostName} com o valor atual de ${itemValue}?`);
 
 					if (querCriar) {
-						// Chamada interna ao nosso PHP para fazer a ponte com o Jira
 						fetch('zabbix.php?action=widget.honey_custom.jira', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
