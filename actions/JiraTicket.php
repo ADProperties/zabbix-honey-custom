@@ -15,11 +15,42 @@ class JiraTicket extends CController {
     protected function checkInput(): bool { return true; }
     protected function checkPermissions(): bool { return true; }
 
+    // ---------------------------------------------------------
+    // CONVERTE TEXTO PARA ADF (API v3)
+    // ---------------------------------------------------------
+    private function toAdfParagraph(string $text): array {
+        $lines = explode("\n", trim($text));
+        $content = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            $content[] = [
+                'type' => 'paragraph',
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $line
+                    ]
+                ]
+            ];
+        }
+
+        return [
+            'type' => 'doc',
+            'version' => 1,
+            'content' => $content
+        ];
+    }
+
     protected function doAction(): void {
 
-        // =========================================================
+        // =====================================================
         // INPUT
-        // =========================================================
+        // =====================================================
         $input  = json_decode(file_get_contents('php://input'), true);
 
         $hostid = $input['hostid'] ?? null;
@@ -40,9 +71,9 @@ class JiraTicket extends CController {
             exit;
         }
 
-        // =========================================================
-        // BUSCAR HOST + TAG CLIENT
-        // =========================================================
+        // =====================================================
+        // HOST + TAG CLIENT
+        // =====================================================
         $hosts = API::Host()->get([
             'output' => ['name'],
             'hostids' => [$hostid],
@@ -76,9 +107,9 @@ class JiraTicket extends CController {
             $label = $hostName;
         }
 
-        // =========================================================
+        // =====================================================
         // JIRA CONFIG
-        // =========================================================
+        // =====================================================
         $jira_url  = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
         $jira_token = ''; // <<< API TOKEN
@@ -89,9 +120,9 @@ class JiraTicket extends CController {
 
         $auth = base64_encode($jira_user . ':' . $jira_token);
 
-        // =========================================================
-        // BUSCAR UTILIZADOR NO JIRA (IGUAL AO SCRIPT BOM)
-        // =========================================================
+        // =====================================================
+        // BUSCAR UTILIZADOR NO JIRA
+        // =====================================================
         $zabbixUser = CWebUser::$data['name'] . ' ' . CWebUser::$data['surname'];
         $userId = null;
 
@@ -111,23 +142,27 @@ class JiraTicket extends CController {
 
         if ($userResp) {
             $users = json_decode($userResp, true);
-            if (is_array($users) && count($users) > 0) {
+            if (is_array($users) && !empty($users)) {
                 $userId = $users[0]['accountId'] ?? null;
             }
         }
 
-        // =========================================================
+        // =====================================================
         // CRIAR TICKET (API v3)
-        // =========================================================
+        // =====================================================
+        $descriptionText =
+            "Cliente: {$clientName}\n" .
+            "Host: {$hostName}\n" .
+            "Valor: {$value}\n" .
+            "Criado no Zabbix por: {$zabbixUser}";
+
+        $summary = mb_substr("{$widget} | {$label}", 0, 250);
+
         $fields = [
-            'project'   => ['key' => $project_key],
-            'issuetype' => ['name' => $issue_type],
-            'summary'   => "{$widget} | {$label}",
-            'description' =>
-                "Cliente: {$clientName}\n".
-                "Host: {$hostName}\n".
-                "Valor: {$value}\n".
-                "Criado no Zabbix por: {$zabbixUser}",
+            'project'     => ['key' => $project_key],
+            'issuetype'   => ['name' => $issue_type],
+            'summary'     => $summary,
+            'description' => $this->toAdfParagraph($descriptionText),
             $client_field_id => ['value' => $clientName]
         ];
 
@@ -160,9 +195,9 @@ class JiraTicket extends CController {
 
         $data = json_decode($resp, true);
 
-        // =========================================================
+        // =====================================================
         // REGISTO LOCAL PARA 👁️
-        // =========================================================
+        // =====================================================
         $file = __DIR__ . '/../tickets.json';
         $tickets = file_exists($file)
             ? json_decode(file_get_contents($file), true)
