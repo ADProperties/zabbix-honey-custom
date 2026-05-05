@@ -3,6 +3,7 @@
 namespace Modules\HoneyCustom\Actions;
 
 use CController;
+use CWebUser;
 use API;
 
 class JiraTicket extends CController {
@@ -14,20 +15,27 @@ class JiraTicket extends CController {
     protected function checkInput(): bool { return true; }
     protected function checkPermissions(): bool { return true; }
 
-    // ---------- TEXTO → ADF (Jira Cloud) ----------
-    private function toAdf(string $text): array {
+    // ---------------------------------------------------------
+    // CONVERTE TEXTO PARA ADF (API v3)
+    // ---------------------------------------------------------
+    private function toAdfParagraph(string $text): array {
+        $lines = explode("\n", trim($text));
         $content = [];
 
-        foreach (explode("\n", trim($text)) as $line) {
+        foreach ($lines as $line) {
             $line = trim($line);
-            if ($line === '') continue;
+            if ($line === '') {
+                continue;
+            }
 
             $content[] = [
                 'type' => 'paragraph',
-                'content' => [[
-                    'type' => 'text',
-                    'text' => $line
-                ]]
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $line
+                    ]
+                ]
             ];
         }
 
@@ -38,128 +46,190 @@ class JiraTicket extends CController {
         ];
     }
 
-    // ---------- NORMALIZA STRING (igual ao script) ----------
-    private function normalize(string $s): string {
-        $map = [
-            'á'=>'a','à'=>'a','ã'=>'a','â'=>'a','ä'=>'a',
-            'é'=>'e','ê'=>'e','è'=>'e','ë'=>'e',
-            'í'=>'i','ì'=>'i','î'=>'i','ï'=>'i',
-            'ó'=>'o','ò'=>'o','õ'=>'o','ô'=>'o','ö'=>'o',
-            'ú'=>'u','ù'=>'u','û'=>'u','ü'=>'u',
-            'ç'=>'c'
-        ];
-        return str_replace(
-            array_keys($map),
-            array_values($map),
-            strtolower(preg_replace('/[\s\-.]/', '', $s))
-        );
-    }
-
     protected function doAction(): void {
 
-        // ---------- INPUT ----------
-        $input = json_decode(file_get_contents('php://input'), true);
+        // =====================================================
+        // INPUT
+        // =====================================================
+        $input  = json_decode(file_get_contents('php://input'), true);
 
         $hostid = $input['hostid'] ?? null;
-        $label  = $input['label'] ?? '';
         $value  = (float)($input['value'] ?? 0);
+        $label  = trim($input['label'] ?? '');
+        $widget = $input['widget'] ?? 'Monitorização';
 
-        if (!$hostid || $value === 0) {
-            echo json_encode(['success'=>false,'message'=>'Dados inválidos']);
+        if (!$hostid) {
+            echo json_encode(['success' => false, 'message' => 'Host inválido']);
             exit;
         }
 
-        // ---------- HOST + CLIENT ----------
-        $host = API::Host()->get([
-            'output'=>['name'],
-            'hostids'=>[$hostid],
-            'selectTags'=>['tag','value']
-        ])[0];
+        if ($value === 0.0) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Não é possível criar ticket quando o valor é 0.'
+            ]);
+            exit;
+        }
 
-        $client = null;
-        foreach ($host['tags'] as $t) {
-            if ($t['tag'] === 'Client') {
-                $client = $t['value'];
+        // =====================================================
+        // HOST + TAG CLIENT
+        // =====================================================
+        $hosts = API::Host()->get([
+            'output' => ['name'],
+            'hostids' => [$hostid],
+            'selectTags' => ['tag', 'value']
+        ]);
+
+        if (!$hosts) {
+            echo json_encode(['success' => false, 'message' => 'Host não encontrado']);
+            exit;
+        }
+
+        $hostName = $hosts[0]['name'];
+        $clientName = null;
+
+        foreach ($hosts[0]['tags'] as $tag) {
+            if (strcasecmp($tag['tag'], 'Client') === 0) {
+                $clientName = $tag['value'];
+                break;
             }
         }
 
-        if (!$client) {
-            echo json_encode(['success'=>false,'message'=>'Falta TAG Client']);
+        if (!$clientName) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'O host não tem a TAG "Client" definida.'
+            ]);
             exit;
         }
 
-        // ---------- PRODUTO (FIXO) ----------
-        $productValue   = 'Mozy Platform';
-        $productFieldId = 'customfield_10768';
+        if ($label === '') {
+            $label = $hostName;
+        }
 
-        // ---------- JIRA CONFIG ----------
-        $jiraUrl   = 'https://glintthsdev.atlassian.net';
-        $jiraUser  = 'david.dias@glintt.com';
-        $jiraToken = 'API_TOKEN_AQUI';
+        // =====================================================
+        // JIRA CONFIG
+        // =====================================================
+        $jira_url  = 'https://glintthsdev.atlassian.net';
+        $jira_user = 'david.dias@glintt.com';
+        $jira_token = ''; // <<< API TOKEN
 
-        $auth = base64_encode("$jiraUser:$jiraToken");
+        $project_key     = 'GX';
+        $issue_type      = 'Monitorização';
+        $client_field_id = 'customfield_10139';
 
-        // ---------- CAPA (CONFLUENCE) ----------
-        $capa = null;
-        $pageId = '322404356';
+        $auth = base64_encode($jira_user . ':' . $jira_token);
 
-        $html = file_get_contents(
-            "$jiraUrl/wiki/rest/api/content/$pageId?expand=body.storage",
-            false,
-            stream_context_create([
-                'http'=>[
-                    'header'=>"Authorization: Basic $auth"
-                ]
-            ])
+        // =====================================================
+        // BUSCAR UTILIZADOR NO JIRA
+        // =====================================================
+        $zabbixUser = CWebUser::$data['name'] . ' ' . CWebUser::$data['surname'];
+        $userId = null;
+
+        $chU = curl_init(
+            $jira_url . '/rest/api/3/user/search?query=' . urlencode($zabbixUser)
         );
 
-        if ($html) {
-            preg_match_all('/<tr.*?<\/tr>/s', $html, $rows);
-            foreach ($rows[0] as $row) {
-                preg_match_all('/<td.*?<\/td>/s', $row, $cols);
-                if (count($cols[0]) >= 2) {
-                    $nome = strip_tags($cols[0][0]);
-                    $capaCol = strip_tags($cols[0][1]);
+        curl_setopt_array($chU, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Basic ' . $auth
+            ]
+        ]);
 
-                    if ($this->normalize($nome) === $this->normalize($client) && $capaCol !== 'N/D') {
-                        $capa = $capaCol;
-                        break;
-                    }
-                }
+        $userResp = curl_exec($chU);
+        curl_close($chU);
+
+        if ($userResp) {
+            $users = json_decode($userResp, true);
+            if (is_array($users) && !empty($users)) {
+                $userId = $users[0]['accountId'] ?? null;
             }
         }
 
-        // ---------- CRIAR TICKET ----------
+        // =====================================================
+        // CRIAR TICKET (API v3)
+        // =====================================================
+        $descriptionText =
+            "Cliente: {$clientName}\n" .
+            "Host: {$hostName}\n" .
+            "Valor: {$value}\n" .
+            "Criado no Zabbix por: {$zabbixUser}";
+
+        $summary = mb_substr("{$widget} | {$label}", 0, 250);
+
         $fields = [
-            'project' => ['key'=>'GX'],
-            'issuetype' => ['name'=>'Monitorização'],
-            'summary' => mb_substr("Monitorização | $label", 0, 250),
-            'description' => $this->toAdf(
-                "Cliente: $client\n".
-                "Produto: $productValue\n".
-                "Valor: $value"
-            ),
-            'customfield_10139' => ['value'=>$client],
-            $productFieldId     => ['value'=>$productValue]
+            'project'     => ['key' => $project_key],
+            'issuetype'   => ['name' => $issue_type],
+            'summary'     => $summary,
+            'description' => $this->toAdfParagraph($descriptionText),
+            $client_field_id => ['value' => $clientName]
         ];
 
-        if ($capa) {
-            $fields['customfield_10683'] = $capa;
+        if ($userId !== null) {
+            $fields['reporter'] = ['accountId' => $userId];
+            $fields['assignee'] = ['accountId' => $userId];
         }
 
-        $resp = file_get_contents(
-            "$jiraUrl/rest/api/3/issue",
-            false,
-            stream_context_create([
-                'http'=>[
-                    'method'=>'POST',
-                    'header'=>"Authorization: Basic $auth\r\nContent-Type: application/json",
-                    'content'=>json_encode(['fields'=>$fields])
-                ]
-            ])
-        );
+        $payload = ['fields' => $fields];
 
-        echo json_encode(['success'=>true,'message'=>'Ticket criado']);
+        $ch = curl_init($jira_url . '/rest/api/3/issue');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Basic ' . $auth,
+                'Content-Type: application/json'
+            ]
+        ]);
+
+        $resp = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($code < 200 || $code >= 300) {
+            echo json_encode(['success' => false, 'message' => $resp]);
+            exit;
+        }
+
+        $data = json_decode($resp, true);
+
+        // =====================================================
+        // REGISTO LOCAL PARA 👁️
+        // =====================================================
+        $file = __DIR__ . '/../tickets.json';
+        $tickets = file_exists($file)
+            ? json_decode(file_get_contents($file), true)
+            : [];
+
+        $tickets[$label] = [
+            'user' => $zabbixUser,
+            'jira' => $data['key']
+        ];
+
+        file_put_contents($file, json_encode($tickets));
+
+        echo json_encode([
+            'success' => true,
+            'message' => "Ticket {$data['key']} criado com sucesso!"
+        ]);
         exit;
     }
+
+// =========================================================
+// PREVENIR TICKET DUPLICADO POR LABEL
+// =========================================================
+$file = __DIR__ . '/../tickets.json';
+$tickets = file_exists($file)
+    ? json_decode(file_get_contents($file), true)
+    : [];
+
+if (isset($tickets[$label])) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Já existe um ticket associado a este item: ' . $tickets[$label]['jira']
+    ]);
+    exit;
+}
 }
