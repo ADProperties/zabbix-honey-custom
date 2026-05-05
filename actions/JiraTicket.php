@@ -17,11 +17,12 @@ class JiraTicket extends CController {
 
     protected function doAction(): void {
 
+        // =========================================================
+        // INPUT
+        // =========================================================
         $input  = json_decode(file_get_contents('php://input'), true);
-
         $hostid = $input['hostid'] ?? null;
-        $value  = (float)($input['value'] ?? 0);
-        $label  = trim($input['label'] ?? '');
+        $value  = $input['value']  ?? '0';
         $widget = $input['widget'] ?? 'Monitorização';
 
         if (!$hostid) {
@@ -29,70 +30,77 @@ class JiraTicket extends CController {
             exit;
         }
 
-        if ($value === 0.0) {
-            echo json_encode(['success' => false, 'message' => 'Valor 0 — ticket bloqueado']);
+        if ((float)$value === 0.0) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Não é possível criar ticket quando o valor é 0.'
+            ]);
             exit;
         }
 
-        // ===============================
-        // HOST + TAG CLIENT
-        // ===============================
+        // =========================================================
+        // BUSCAR HOST NAME E TAG CLIENT
+        // =========================================================
+        $hostName = null;
+        $clientName = null;
+
         $hosts = API::Host()->get([
             'output' => ['name'],
             'hostids' => [$hostid],
             'selectTags' => ['tag', 'value']
         ]);
 
-        if (!$hosts) {
-            echo json_encode(['success' => false, 'message' => 'Host não encontrado']);
-            exit;
-        }
+        if ($hosts) {
+            $hostName = $hosts[0]['name'];
 
-        $hostName = $hosts[0]['name'];
-        $client = null;
-
-        foreach ($hosts[0]['tags'] as $t) {
-            if (strcasecmp($t['tag'], 'Client') === 0) {
-                $client = $t['value'];
-                break;
+            foreach ($hosts[0]['tags'] as $tag) {
+                if (strcasecmp($tag['tag'], 'Client') === 0) {
+                    $clientName = $tag['value'];
+                    break;
+                }
             }
         }
 
-        if (!$client) {
-            echo json_encode(['success' => false, 'message' => 'TAG Client não definida']);
+        if (!$clientName) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'O host não tem a TAG "Client" definida.'
+            ]);
             exit;
         }
 
-        if ($label === '') {
-            $label = $hostName;
-        }
-
-        // ===============================
-        // JIRA CONFIG
-        // ===============================
+        // =========================================================
+        // CONFIGURAÇÕES JIRA
+        // =========================================================
         $jira_url  = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
-        $jira_token = ''; // <<< TOKEN AQUI
+        $jira_token = ''; // <<<<<< TOKEN AQUI
 
-        $project_key = 'GX';
-        $issue_type  = 'Monitorização';
+        $project_key     = 'GX';
+        $issue_type      = 'Monitorização';
         $client_field_id = 'customfield_10139';
 
         $auth = base64_encode($jira_user . ':' . $jira_token);
 
-        $payload = [
-            'fields' => [
-                'project'     => ['key' => $project_key],
-                'issuetype'   => ['name' => $issue_type],
-                'summary'     => "{$widget} | {$label}",
-                'description' =>
-                    "Cliente: {$client}\n".
-                    "Host: {$hostName}\n".
-                    "Valor: {$value}\n".
-                    "Criado por: ".CWebUser::$data['name'].' '.CWebUser::$data['surname'],
-                $client_field_id => ['value' => $client]
-            ]
+        // =========================================================
+        // CRIAR TICKET
+        // =========================================================
+        $description =
+            "Ticket criado manualmente via Dashboard.\n\n".
+            "*Host:* {$hostName}\n".
+            "*Cliente:* {$clientName}\n".
+            "*Métrica:* {$widget}\n".
+            "*Valor:* {$value}";
+
+        $fields = [
+            'project'     => ['key' => $project_key],
+            'issuetype'   => ['name' => $issue_type],
+            'summary'     => "{$widget} - {$clientName}",
+            'description' => $description,
+            $client_field_id => ['value' => $clientName]
         ];
+
+        $payload = ['fields' => $fields];
 
         $ch = curl_init($jira_url . '/rest/api/2/issue');
         curl_setopt_array($ch, [
@@ -109,32 +117,18 @@ class JiraTicket extends CController {
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($code < 200 || $code >= 300) {
-            echo json_encode(['success' => false, 'message' => $resp]);
-            exit;
+        if ($code >= 200 && $code < 300) {
+            $data = json_decode($resp, true);
+            echo json_encode([
+                'success' => true,
+                'message' => "Ticket {$data['key']} criado com sucesso!"
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => "Erro no Jira: {$resp}"
+            ]);
         }
-
-        $data = json_decode($resp, true);
-
-        // ===============================
-        // REGISTO LOCAL (👁️ + USER)
-        // ===============================
-        $file = __DIR__ . '/../tickets.json';
-        $tickets = file_exists($file)
-            ? json_decode(file_get_contents($file), true)
-            : [];
-
-        $tickets[$label] = [
-            'user' => CWebUser::$data['name'].' '.CWebUser::$data['surname'],
-            'jira' => $data['key']
-        ];
-
-        file_put_contents($file, json_encode($tickets));
-
-        echo json_encode([
-            'success' => true,
-            'message' => "Ticket {$data['key']} criado com sucesso"
-        ]);
         exit;
     }
 }
