@@ -2,7 +2,8 @@
 
 namespace Modules\HoneyCustom\Actions;
 
-useWebUser;use CController;
+use CController;
+use CWebUser;
 use API;
 
 class JiraTicket extends CController {
@@ -64,6 +65,16 @@ class JiraTicket extends CController {
         $str = preg_replace('/[\s\-.]+/', '', $str);
 
         return $str;
+    }
+
+    // ---------------------------------------------------------
+    // LIMPA HTML / ENTITIES (igual à ideia do script)
+    // ---------------------------------------------------------
+    private function cleanCell(string $html): string {
+        $text = strip_tags($html);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = str_replace("\xc2\xa0", ' ', $text); // nbsp
+        return trim($text);
     }
 
     protected function doAction(): void {
@@ -161,7 +172,7 @@ class JiraTicket extends CController {
         $auth = base64_encode($jira_user . ':' . $jira_token);
 
         // =====================================================
-        // BUSCAR CAPA NO CONFLUENCE
+        // BUSCAR CAPA NO CONFLUENCE (ESTILO SCRIPT 5 ESTRELAS)
         // =====================================================
         $capaEncontrada = null;
 
@@ -184,30 +195,30 @@ class JiraTicket extends CController {
             $html = $confJson['body']['storage']['value'] ?? '';
 
             if ($html !== '') {
-                $dom = new \DOMDocument();
-                libxml_use_internal_errors(true);
-                @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
-                libxml_clear_errors();
+                if (preg_match('/<table[\s\S]*?<\/table>/i', $html, $tableMatch)) {
+                    if (preg_match_all('/<tr[\s\S]*?<\/tr>/i', $tableMatch[0], $rows)) {
+                        $termoBuscaNorm = $this->normalizar($clientName);
 
-                $tables = $dom->getElementsByTagName('table');
+                        foreach ($rows[0] as $index => $rowHtml) {
+                            // ignora header
+                            if ($index === 0) {
+                                continue;
+                            }
 
-                if ($tables->length > 0) {
-                    $rows = $tables->item(0)->getElementsByTagName('tr');
-                    $termoBuscaNorm = $this->normalizar($clientName);
+                            if (!preg_match_all('/<td[\s\S]*?<\/td>/i', $rowHtml, $cols)) {
+                                continue;
+                            }
 
-                    foreach ($rows as $i => $row) {
-                        // ignora o header
-                        if ($i === 0) {
-                            continue;
-                        }
+                            if (count($cols[0]) < 2) {
+                                continue;
+                            }
 
-                        $cols = $row->getElementsByTagName('td');
-
-                        // Nome | Capa | Desc | Ano | Sigla
-                        if ($cols->length >= 2) {
-                            $colNome  = trim($cols->item(0)->textContent);
-                            $colCapa  = trim($cols->item(1)->textContent);
-                            $colSigla = ($cols->length >= 5) ? trim($cols->item(4)->textContent) : '';
+                            // 0: Nome | 1: Capa | 4: Sigla
+                            $colNome  = $this->cleanCell($cols[0][0]);
+                            $colCapa  = $this->cleanCell($cols[0][1]);
+                            $colSigla = (count($cols[0]) >= 5)
+                                ? $this->cleanCell($cols[0][4])
+                                : '';
 
                             $colNomeNorm  = $this->normalizar($colNome);
                             $colSiglaNorm = $this->normalizar($colSigla);
@@ -295,7 +306,8 @@ class JiraTicket extends CController {
             $fields['assignee'] = ['accountId' => $userId];
         }
 
-        if ($capa_field_id && $capaEncontrada) {
+        // CAPA igual ao script: string direta no campo
+        if ($capaEncontrada !== null && $capaEncontrada !== '') {
             $fields[$capa_field_id] = $capaEncontrada;
         }
 
@@ -317,7 +329,10 @@ class JiraTicket extends CController {
         curl_close($ch);
 
         if ($code < 200 || $code >= 300) {
-            echo json_encode(['success' => false, 'message' => $resp]);
+            echo json_encode([
+                'success' => false,
+                'message' => $resp
+            ]);
             exit;
         }
 
@@ -340,4 +355,3 @@ class JiraTicket extends CController {
         exit;
     }
 }
-
