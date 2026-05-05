@@ -21,17 +21,18 @@ class JiraTicket extends CController {
         // INPUT
         // =========================================================
         $input  = json_decode(file_get_contents('php://input'), true);
+
         $hostid = $input['hostid'] ?? null;
-        $value  = $input['value']  ?? '0';
-        $widget = $input['widget'] ?? 'Monitorização';
+        $value  = (float)($input['value'] ?? 0);
         $label  = trim($input['label'] ?? '');
+        $widget = $input['widget'] ?? 'Monitorização';
 
         if (!$hostid) {
             echo json_encode(['success' => false, 'message' => 'Host inválido']);
             exit;
         }
 
-        if ((float)$value === 0.0) {
+        if ($value === 0.0) {
             echo json_encode([
                 'success' => false,
                 'message' => 'Não é possível criar ticket quando o valor é 0.'
@@ -40,7 +41,7 @@ class JiraTicket extends CController {
         }
 
         // =========================================================
-        // HOST + TAG CLIENT
+        // BUSCAR HOST + TAG CLIENT
         // =========================================================
         $hosts = API::Host()->get([
             'output' => ['name'],
@@ -71,7 +72,6 @@ class JiraTicket extends CController {
             exit;
         }
 
-        // fallback seguro
         if ($label === '') {
             $label = $hostName;
         }
@@ -81,7 +81,7 @@ class JiraTicket extends CController {
         // =========================================================
         $jira_url  = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
-        $jira_token = ''; // <<< TOKEN AQUI
+        $jira_token = ''; // <<< API TOKEN
 
         $project_key     = 'GX';
         $issue_type      = 'Monitorização';
@@ -90,23 +90,55 @@ class JiraTicket extends CController {
         $auth = base64_encode($jira_user . ':' . $jira_token);
 
         // =========================================================
-        // CRIAR TICKET
+        // BUSCAR UTILIZADOR NO JIRA (IGUAL AO SCRIPT BOM)
         // =========================================================
-        $payload = [
-            'fields' => [
-                'project' => ['key' => $project_key],
-                'issuetype' => ['name' => $issue_type],
-                'summary' => "{$widget} | {$label}",
-                'description' =>
-                    "Cliente: {$clientName}\n".
-                    "Host: {$hostName}\n".
-                    "Valor: {$value}\n".
-                    "Criado por: ".CWebUser::$data['name'].' '.CWebUser::$data['surname'],
-                $client_field_id => ['value' => $clientName]
+        $zabbixUser = CWebUser::$data['name'] . ' ' . CWebUser::$data['surname'];
+        $userId = null;
+
+        $chU = curl_init(
+            $jira_url . '/rest/api/3/user/search?query=' . urlencode($zabbixUser)
+        );
+
+        curl_setopt_array($chU, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Basic ' . $auth
             ]
+        ]);
+
+        $userResp = curl_exec($chU);
+        curl_close($chU);
+
+        if ($userResp) {
+            $users = json_decode($userResp, true);
+            if (is_array($users) && count($users) > 0) {
+                $userId = $users[0]['accountId'] ?? null;
+            }
+        }
+
+        // =========================================================
+        // CRIAR TICKET (API v3)
+        // =========================================================
+        $fields = [
+            'project'   => ['key' => $project_key],
+            'issuetype' => ['name' => $issue_type],
+            'summary'   => "{$widget} | {$label}",
+            'description' =>
+                "Cliente: {$clientName}\n".
+                "Host: {$hostName}\n".
+                "Valor: {$value}\n".
+                "Criado no Zabbix por: {$zabbixUser}",
+            $client_field_id => ['value' => $clientName]
         ];
 
-        $ch = curl_init($jira_url . '/rest/api/2/issue');
+        if ($userId !== null) {
+            $fields['reporter'] = ['accountId' => $userId];
+            $fields['assignee'] = ['accountId' => $userId];
+        }
+
+        $payload = ['fields' => $fields];
+
+        $ch = curl_init($jira_url . '/rest/api/3/issue');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
@@ -129,7 +161,7 @@ class JiraTicket extends CController {
         $data = json_decode($resp, true);
 
         // =========================================================
-        // ✅ REGISTO LOCAL PARA 👁️ 
+        // REGISTO LOCAL PARA 👁️
         // =========================================================
         $file = __DIR__ . '/../tickets.json';
         $tickets = file_exists($file)
@@ -137,7 +169,7 @@ class JiraTicket extends CController {
             : [];
 
         $tickets[$label] = [
-            'user' => CWebUser::$data['name'].' '.CWebUser::$data['surname'],
+            'user' => $zabbixUser,
             'jira' => $data['key']
         ];
 
