@@ -2,8 +2,7 @@
 
 namespace Modules\HoneyCustom\Actions;
 
-use CController;
-use CWebUser;
+useWebUser;use CController;
 use API;
 
 class JiraTicket extends CController {
@@ -44,6 +43,27 @@ class JiraTicket extends CController {
             'version' => 1,
             'content' => $content
         ];
+    }
+
+    // ---------------------------------------------------------
+    // NORMALIZA TEXTO (igual ao script 5 estrelas)
+    // ---------------------------------------------------------
+    private function normalizar(string $str): string {
+        $str = mb_strtolower($str, 'UTF-8');
+
+        $map = [
+            'á' => 'a', 'à' => 'a', 'ã' => 'a', 'â' => 'a', 'ä' => 'a',
+            'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'õ' => 'o', 'ô' => 'o', 'ö' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u',
+            'ç' => 'c'
+        ];
+
+        $str = strtr($str, $map);
+        $str = preg_replace('/[\s\-.]+/', '', $str);
+
+        return $str;
     }
 
     protected function doAction(): void {
@@ -90,7 +110,7 @@ class JiraTicket extends CController {
 
         foreach ($hosts[0]['tags'] as $tag) {
             if (strcasecmp($tag['tag'], 'Client') === 0) {
-                $clientName = $tag['value'];
+                $clientName = trim($tag['value']);
                 break;
             }
         }
@@ -108,17 +128,119 @@ class JiraTicket extends CController {
         }
 
         // =====================================================
+        // PREVENIR TICKET DUPLICADO POR LABEL
+        // =====================================================
+        $file = __DIR__ . '/../tickets.json';
+        $tickets = file_exists($file)
+            ? json_decode(file_get_contents($file), true)
+            : [];
+
+        if (isset($tickets[$label])) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Já existe um ticket associado a este item: ' . $tickets[$label]['jira']
+            ]);
+            exit;
+        }
+
+        // =====================================================
         // JIRA CONFIG
         // =====================================================
         $jira_url  = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
         $jira_token = ''; // <<< API TOKEN
 
-        $project_key     = 'GX';
-        $issue_type      = 'Monitorização';
-        $client_field_id = 'customfield_10139';
+        $project_key        = 'GX';
+        $issue_type         = 'Monitorização';
+        $client_field_id    = 'customfield_10139';
+        $product_field_id   = 'customfield_10768';
+        $product_value      = 'Mozy Platform';
+        $capa_field_id      = 'customfield_10683';
+        $confluence_page_id = '322404356';
 
         $auth = base64_encode($jira_user . ':' . $jira_token);
+
+        // =====================================================
+        // BUSCAR CAPA NO CONFLUENCE
+        // =====================================================
+        $capaEncontrada = null;
+
+        $confUrl = $jira_url . '/wiki/rest/api/content/' . $confluence_page_id . '?expand=body.storage';
+
+        $chConf = curl_init($confUrl);
+        curl_setopt_array($chConf, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Basic ' . $auth
+            ]
+        ]);
+
+        $confResp = curl_exec($chConf);
+        $confCode = curl_getinfo($chConf, CURLINFO_HTTP_CODE);
+        curl_close($chConf);
+
+        if ($confResp && $confCode >= 200 && $confCode < 300) {
+            $confJson = json_decode($confResp, true);
+            $html = $confJson['body']['storage']['value'] ?? '';
+
+            if ($html !== '') {
+                $dom = new \DOMDocument();
+                libxml_use_internal_errors(true);
+                @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+                libxml_clear_errors();
+
+                $tables = $dom->getElementsByTagName('table');
+
+                if ($tables->length > 0) {
+                    $rows = $tables->item(0)->getElementsByTagName('tr');
+                    $termoBuscaNorm = $this->normalizar($clientName);
+
+                    foreach ($rows as $i => $row) {
+                        // ignora o header
+                        if ($i === 0) {
+                            continue;
+                        }
+
+                        $cols = $row->getElementsByTagName('td');
+
+                        // Nome | Capa | Desc | Ano | Sigla
+                        if ($cols->length >= 2) {
+                            $colNome  = trim($cols->item(0)->textContent);
+                            $colCapa  = trim($cols->item(1)->textContent);
+                            $colSigla = ($cols->length >= 5) ? trim($cols->item(4)->textContent) : '';
+
+                            $colNomeNorm  = $this->normalizar($colNome);
+                            $colSiglaNorm = $this->normalizar($colSigla);
+
+                            $matchEncontrado = false;
+
+                            // 1. Match exacto pelo nome
+                            if ($colNomeNorm === $termoBuscaNorm) {
+                                $matchEncontrado = true;
+                            }
+                            // 2. Match pela sigla
+                            elseif ($colSiglaNorm !== '' && $colSiglaNorm === $termoBuscaNorm) {
+                                $matchEncontrado = true;
+                            }
+                            // 3. Match parcial
+                            elseif (
+                                strpos($colNomeNorm, $termoBuscaNorm) !== false ||
+                                strpos($termoBuscaNorm, $colNomeNorm) !== false
+                            ) {
+                                $matchEncontrado = true;
+                            }
+
+                            if ($matchEncontrado) {
+                                if ($colCapa !== '' && strtoupper($colCapa) !== 'N/D') {
+                                    $capaEncontrada = $colCapa;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // =====================================================
         // BUSCAR UTILIZADOR NO JIRA
@@ -152,6 +274,7 @@ class JiraTicket extends CController {
         // =====================================================
         $descriptionText =
             "Cliente: {$clientName}\n" .
+            "Produto: {$product_value}\n" .
             "Host: {$hostName}\n" .
             "Valor: {$value}\n" .
             "Criado no Zabbix por: {$zabbixUser}";
@@ -159,16 +282,21 @@ class JiraTicket extends CController {
         $summary = mb_substr("{$widget} | {$label}", 0, 250);
 
         $fields = [
-            'project'     => ['key' => $project_key],
-            'issuetype'   => ['name' => $issue_type],
-            'summary'     => $summary,
-            'description' => $this->toAdfParagraph($descriptionText),
-            $client_field_id => ['value' => $clientName]
+            'project'            => ['key' => $project_key],
+            'issuetype'          => ['name' => $issue_type],
+            'summary'            => $summary,
+            'description'        => $this->toAdfParagraph($descriptionText),
+            $client_field_id     => ['value' => $clientName],
+            $product_field_id    => ['value' => $product_value]
         ];
 
         if ($userId !== null) {
             $fields['reporter'] = ['accountId' => $userId];
             $fields['assignee'] = ['accountId' => $userId];
+        }
+
+        if ($capa_field_id && $capaEncontrada) {
+            $fields[$capa_field_id] = $capaEncontrada;
         }
 
         $payload = ['fields' => $fields];
@@ -198,11 +326,6 @@ class JiraTicket extends CController {
         // =====================================================
         // REGISTO LOCAL PARA 👁️
         // =====================================================
-        $file = __DIR__ . '/../tickets.json';
-        $tickets = file_exists($file)
-            ? json_decode(file_get_contents($file), true)
-            : [];
-
         $tickets[$label] = [
             'user' => $zabbixUser,
             'jira' => $data['key']
@@ -216,20 +339,5 @@ class JiraTicket extends CController {
         ]);
         exit;
     }
-
-// =========================================================
-// PREVENIR TICKET DUPLICADO POR LABEL
-// =========================================================
-$file = __DIR__ . '/../tickets.json';
-$tickets = file_exists($file)
-    ? json_decode(file_get_contents($file), true)
-    : [];
-
-if (isset($tickets[$label])) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Já existe um ticket associado a este item: ' . $tickets[$label]['jira']
-    ]);
-    exit;
 }
-}
+
