@@ -15,9 +15,9 @@ class JiraTicket extends CController {
     protected function checkInput(): bool { return true; }
     protected function checkPermissions(): bool { return true; }
 
-    // ---------------------------------------------------------
-    // CONVERTE TEXTO PARA ADF (API v3)
-    // ---------------------------------------------------------
+    // =====================================================
+    // CONVERTE TEXTO PARA ADF (JIRA API v3)
+    // =====================================================
     private function toAdfParagraph(string $text): array {
         $lines = explode("\n", trim($text));
         $content = [];
@@ -67,6 +67,22 @@ class JiraTicket extends CController {
             echo json_encode([
                 'success' => false,
                 'message' => 'Não é possível criar ticket quando o valor é 0.'
+            ]);
+            exit;
+        }
+
+        // =====================================================
+        // PREVENIR TICKET DUPLICADO POR LABEL ✅✅✅
+        // =====================================================
+        $file = __DIR__ . '/../tickets.json';
+        $tickets = file_exists($file)
+            ? json_decode(file_get_contents($file), true)
+            : [];
+
+        if (isset($tickets[$label])) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Já existe um ticket associado: ' . $tickets[$label]['jira']
             ]);
             exit;
         }
@@ -123,7 +139,7 @@ class JiraTicket extends CController {
         // =====================================================
         // BUSCAR UTILIZADOR NO JIRA
         // =====================================================
-        $zabbixUser = CWebUser::$data['name'] . ' ' . CWebUser::$data['surname'];
+        $zabbixUser = CWebUser::$data['name'].' '.CWebUser::$data['surname'];
         $userId = null;
 
         $chU = curl_init(
@@ -148,12 +164,12 @@ class JiraTicket extends CController {
         }
 
         // =====================================================
-        // CRIAR TICKET (API v3)
+        // CRIAR TICKET (JIRA API v3)
         // =====================================================
         $descriptionText =
-            "Cliente: {$clientName}\n" .
-            "Host: {$hostName}\n" .
-            "Valor: {$value}\n" .
+            "Cliente: {$clientName}\n".
+            "Host: {$hostName}\n".
+            "Valor: {$value}\n".
             "Criado no Zabbix por: {$zabbixUser}";
 
         $summary = mb_substr("{$widget} | {$label}", 0, 250);
@@ -198,11 +214,6 @@ class JiraTicket extends CController {
         // =====================================================
         // REGISTO LOCAL PARA 👁️
         // =====================================================
-        $file = __DIR__ . '/../tickets.json';
-        $tickets = file_exists($file)
-            ? json_decode(file_get_contents($file), true)
-            : [];
-
         $tickets[$label] = [
             'user' => $zabbixUser,
             'jira' => $data['key']
