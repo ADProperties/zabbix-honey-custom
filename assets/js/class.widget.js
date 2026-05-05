@@ -20,10 +20,10 @@ class CWidgetCustomHoney extends CWidget {
     #resize_timeout_id;
     #items_max_count = 1000;
     #items_loaded_count = 0;
+
     #cells_data = new Map();
     #selected_hostid = null;
     #selected_itemid = null;
-    #selected_key_ = null;
 
     onActivate() {
         this.#items_max_count = this.#getItemsMaxCount();
@@ -69,11 +69,14 @@ class CWidgetCustomHoney extends CWidget {
 
     setContents(response) {
 
+        /* =========================================================
+           INICIALIZA O HONEYCOMB
+        ========================================================= */
         if (this.#honeycomb === null) {
 
             const padding = {
                 vertical: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
-                horizontal: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H,
+                horizontal: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H
             };
 
             this.#honeycomb = new CSVGCustomHoney(padding, response.config);
@@ -87,32 +90,30 @@ class CWidgetCustomHoney extends CWidget {
 
             this.#honeycomb.setSize(super._getContentsSize());
 
-            // =========================================================
-            // CLIQUE → CRIAR TICKET JIRA
-            // =========================================================
+            /* =========================================================
+               CLIQUE → CRIAR TICKET NO JIRA
+            ========================================================= */
             this.#honeycomb.getSVGElement().addEventListener(
                 CSVGCustomHoney.EVENT_CELL_CLICK,
                 e => {
-
                     this.#selected_hostid = e.detail.hostid;
                     this.#selected_itemid = e.detail.itemid;
 
-                    const cellData = this.#cells_data.get(this.#selected_itemid);
-                    if (!cellData) {
+                    const cell = this.#cells_data.get(this.#selected_itemid);
+                    if (!cell) {
                         return;
                     }
 
-                    const itemValue = cellData.value;
-                    const widgetName = this.getName();
+                    const label = cell.primary_label.replace(/\n/g, ' ').trim();
+                    const value = parseFloat(cell.value);
 
-                    // UX: bloqueio imediato no frontend
-                    if (parseFloat(itemValue) === 0) {
+                    // Bloqueio UX
+                    if (value === 0) {
                         alert('Não é possível criar ticket quando o valor é 0.');
                         return;
                     }
 
-                    const confirmar = confirm('Deseja criar um ticket no Jira?');
-                    if (!confirmar) {
+                    if (!confirm(`Deseja criar um ticket no Jira para "${label}"?`)) {
                         return;
                     }
 
@@ -121,25 +122,21 @@ class CWidgetCustomHoney extends CWidget {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             hostid: this.#selected_hostid,
-                            value: itemValue,
-                            widget: widgetName
+                            label: label,
+                            value: value,
+                            widget: this.getName()
                         })
                     })
                     .then(res => res.json())
                     .then(data => {
+                        alert(data.message);
                         if (data.success) {
-                            alert(data.message);
                             this._startUpdating();
-                        }
-                        else {
-                            alert('Erro: ' + data.message);
                         }
                     })
                     .catch(() => {
                         alert('Erro na comunicação com o backend.');
                     });
-
-                    this.#broadcast();
                 }
             );
 
@@ -161,27 +158,43 @@ class CWidgetCustomHoney extends CWidget {
             );
         }
 
-        // =========================================================
-        // DESENHO DAS CÉLULAS
-        // =========================================================
-        const applyDataAndDraw = () => {
+        /* =========================================================
+           ATUALIZA DADOS + 👁️ + LIMPEZA QUANDO VALUE = 0
+        ========================================================= */
+        this.#items_loaded_count = response.cells.length;
 
-            this.#items_loaded_count = response.cells.length;
-            this.#honeycomb.setValue({ cells: response.cells });
+        this.#cells_data.clear();
+        response.cells.forEach(cell => {
+            this.#cells_data.set(cell.itemid, cell);
+        });
 
-            if (this.#items_loaded_count === 0) return;
+        // Hosts que voltaram a zero → fechar localmente
+        const zeroHosts = response.cells
+            .filter(c => parseFloat(c.value) === 0)
+            .map(c => c.primary_label.replace(/\n/g, ' ').trim());
 
-            this.#cells_data.clear();
+        fetch('zabbix.php?action=widget.honey_custom.tickets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ zero_hosts: zeroHosts })
+        })
+        .then(res => res.json())
+        .then(tickets => {
             response.cells.forEach(cell => {
-                this.#cells_data.set(cell.itemid, cell);
+                const label = cell.primary_label.replace(/\n/g, ' ').trim();
+
+                if (tickets[label] && parseFloat(cell.value) > 0) {
+                    cell.bg_color = '2196F3';
+                    cell.primary_label += `\n👁️ ${tickets[label].user}`;
+                }
             });
 
-            if (this.#selected_itemid !== null) {
-                this.#honeycomb.selectCell(this.#selected_itemid);
-            }
-        };
-
-        applyDataAndDraw();
+            this.#honeycomb.setValue({ cells: response.cells });
+        })
+        .catch(() => {
+            // fallback — desenha na mesma
+            this.#honeycomb.setValue({ cells: response.cells });
+        });
     }
 
     #broadcast() {

@@ -24,6 +24,7 @@ class JiraTicket extends CController {
         $hostid = $input['hostid'] ?? null;
         $value  = $input['value']  ?? '0';
         $widget = $input['widget'] ?? 'Monitorização';
+        $label  = trim($input['label'] ?? '');
 
         if (!$hostid) {
             echo json_encode(['success' => false, 'message' => 'Host inválido']);
@@ -39,25 +40,26 @@ class JiraTicket extends CController {
         }
 
         // =========================================================
-        // BUSCAR HOST NAME E TAG CLIENT
+        // HOST + TAG CLIENT
         // =========================================================
-        $hostName = null;
-        $clientName = null;
-
         $hosts = API::Host()->get([
             'output' => ['name'],
             'hostids' => [$hostid],
             'selectTags' => ['tag', 'value']
         ]);
 
-        if ($hosts) {
-            $hostName = $hosts[0]['name'];
+        if (!$hosts) {
+            echo json_encode(['success' => false, 'message' => 'Host não encontrado']);
+            exit;
+        }
 
-            foreach ($hosts[0]['tags'] as $tag) {
-                if (strcasecmp($tag['tag'], 'Client') === 0) {
-                    $clientName = $tag['value'];
-                    break;
-                }
+        $hostName = $hosts[0]['name'];
+        $clientName = null;
+
+        foreach ($hosts[0]['tags'] as $tag) {
+            if (strcasecmp($tag['tag'], 'Client') === 0) {
+                $clientName = $tag['value'];
+                break;
             }
         }
 
@@ -69,12 +71,17 @@ class JiraTicket extends CController {
             exit;
         }
 
+        // fallback seguro
+        if ($label === '') {
+            $label = $hostName;
+        }
+
         // =========================================================
-        // CONFIGURAÇÕES JIRA
+        // JIRA CONFIG
         // =========================================================
         $jira_url  = 'https://glintthsdev.atlassian.net';
         $jira_user = 'david.dias@glintt.com';
-        $jira_token = ''; // <<<<<< TOKEN AQUI
+        $jira_token = ''; // <<< TOKEN AQUI
 
         $project_key     = 'GX';
         $issue_type      = 'Monitorização';
@@ -85,22 +92,19 @@ class JiraTicket extends CController {
         // =========================================================
         // CRIAR TICKET
         // =========================================================
-        $description =
-            "Ticket criado manualmente via Dashboard.\n\n".
-            "*Host:* {$hostName}\n".
-            "*Cliente:* {$clientName}\n".
-            "*Métrica:* {$widget}\n".
-            "*Valor:* {$value}";
-
-        $fields = [
-            'project'     => ['key' => $project_key],
-            'issuetype'   => ['name' => $issue_type],
-            'summary'     => "{$widget} - {$clientName}",
-            'description' => $description,
-            $client_field_id => ['value' => $clientName]
+        $payload = [
+            'fields' => [
+                'project' => ['key' => $project_key],
+                'issuetype' => ['name' => $issue_type],
+                'summary' => "{$widget} | {$label}",
+                'description' =>
+                    "Cliente: {$clientName}\n".
+                    "Host: {$hostName}\n".
+                    "Valor: {$value}\n".
+                    "Criado por: ".CWebUser::$data['name'].' '.CWebUser::$data['surname'],
+                $client_field_id => ['value' => $clientName]
+            ]
         ];
-
-        $payload = ['fields' => $fields];
 
         $ch = curl_init($jira_url . '/rest/api/2/issue');
         curl_setopt_array($ch, [
@@ -117,18 +121,32 @@ class JiraTicket extends CController {
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($code >= 200 && $code < 300) {
-            $data = json_decode($resp, true);
-            echo json_encode([
-                'success' => true,
-                'message' => "Ticket {$data['key']} criado com sucesso!"
-            ]);
-        } else {
-            echo json_encode([
-                'success' => false,
-                'message' => "Erro no Jira: {$resp}"
-            ]);
+        if ($code < 200 || $code >= 300) {
+            echo json_encode(['success' => false, 'message' => $resp]);
+            exit;
         }
+
+        $data = json_decode($resp, true);
+
+        // =========================================================
+        // ✅ REGISTO LOCAL PARA 👁️ 
+        // =========================================================
+        $file = __DIR__ . '/../tickets.json';
+        $tickets = file_exists($file)
+            ? json_decode(file_get_contents($file), true)
+            : [];
+
+        $tickets[$label] = [
+            'user' => CWebUser::$data['name'].' '.CWebUser::$data['surname'],
+            'jira' => $data['key']
+        ];
+
+        file_put_contents($file, json_encode($tickets));
+
+        echo json_encode([
+            'success' => true,
+            'message' => "Ticket {$data['key']} criado com sucesso!"
+        ]);
         exit;
     }
 }
