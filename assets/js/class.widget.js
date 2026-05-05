@@ -7,347 +7,212 @@
 ** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 ** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 ** See the GNU Affero General Public License for more details.
-**
-** You should have received a copy of the GNU Affero General Public License along with this program.
-** If not, see <https://www.gnu.org/licenses/>.
-**/
+*/
 
 class CWidgetCustomHoney extends CWidget {
 
-	static ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V = 8;
-	static ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H = 10;
+    static ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V = 8;
+    static ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H = 10;
 
-	/**
-	 * @type {CSVGCustomHoney|null}
-	 */
-	#honeycomb = null;
+    #honeycomb = null;
+    #user_interacting = false;
+    #interacting_timeout_id;
+    #resize_timeout_id;
+    #items_max_count = 1000;
+    #items_loaded_count = 0;
+    #cells_data = new Map();
+    #selected_hostid = null;
+    #selected_itemid = null;
+    #selected_key_ = null;
 
-	/**
-	 * @type {boolean}
-	 */
-	#user_interacting = false;
+    onActivate() {
+        this.#items_max_count = this.#getItemsMaxCount();
+    }
 
-	/**
-	 * @type {number}
-	 */
-	#interacting_timeout_id;
+    onDeactivate() {
+        clearTimeout(this.#resize_timeout_id);
+    }
 
-	/**
-	 * @type {number}
-	 */
-	#resize_timeout_id;
+    isUserInteracting() {
+        return this.#user_interacting || super.isUserInteracting();
+    }
 
-	/**
-	 * @type {number}
-	 */
-	#items_max_count = 1000;
+    onResize() {
+        if (this.getState() !== WIDGET_STATE_ACTIVE) {
+            return;
+        }
 
-	/**
-	 * @type {number}
-	 */
-	#items_loaded_count = 0;
+        clearTimeout(this.#resize_timeout_id);
 
-	/**
-	 * Cells data from the request.
-	 *
-	 * @type {Map<string, Object>}
-	 */
-	#cells_data = new Map();
+        const old_items_max_count = this.#items_max_count;
+        this.#items_max_count = this.#getItemsMaxCount();
 
-	/**
-	 * Host ID of selected cell
-	 *
-	 * @type {string|null}
-	 */
-	#selected_hostid = null;
+        if (this.#items_max_count > old_items_max_count &&
+            this.#items_loaded_count >= old_items_max_count) {
+            this._startUpdating();
+        }
 
-	/**
-	 * Item ID of selected cell
-	 *
-	 * @type {string|null}
-	 */
-	#selected_itemid = null;
+        this.#resize_timeout_id = setTimeout(() => {
+            if (this.#honeycomb !== null) {
+                this.#honeycomb.setSize(super._getContentsSize());
+            }
+        }, 100);
+    }
 
-	/**
-	 * Key of selected item.
-	 *
-	 * @type {string|null}
-	 */
-	#selected_key_ = null;
+    getUpdateRequestData() {
+        return {
+            ...super.getUpdateRequestData(),
+            max_items: this.#items_max_count,
+            with_config: this.#honeycomb === null ? 1 : undefined
+        };
+    }
 
-	onActivate() {
-		this.#items_max_count = this.#getItemsMaxCount();
-	}
+    setContents(response) {
 
-	onDeactivate() {
-		clearTimeout(this.#resize_timeout_id);
-	}
+        if (this.#honeycomb === null) {
 
-	isUserInteracting() {
-		return this.#user_interacting || super.isUserInteracting();
-	}
+            const padding = {
+                vertical: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
+                horizontal: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H,
+            };
 
-	onResize() {
-		if (this.getState() !== WIDGET_STATE_ACTIVE) {
-			return;
-		}
+            this.#honeycomb = new CSVGCustomHoney(padding, response.config);
 
-		clearTimeout(this.#resize_timeout_id);
+            const svgElement = this.#honeycomb.getSVGElement();
+            svgElement.style.display = 'block';
+            svgElement.style.overflow = 'hidden';
 
-		const old_items_max_count = this.#items_max_count;
-		this.#items_max_count = this.#getItemsMaxCount();
+            this._body.prepend(svgElement);
+            this._body.style.overflow = 'hidden';
 
-		if (this.#items_max_count > old_items_max_count && this.#items_loaded_count >= old_items_max_count) {
-			this._startUpdating();
-		}
+            this.#honeycomb.setSize(super._getContentsSize());
 
-		this.#resize_timeout_id = setTimeout(() => {
-			if (this.#honeycomb !== null) {
-				this.#honeycomb.setSize(super._getContentsSize());
-			}
-		}, 100);
-	}
+            // =========================================================
+            // CLIQUE → CRIAR TICKET JIRA
+            // =========================================================
+            this.#honeycomb.getSVGElement().addEventListener(
+                CSVGCustomHoney.EVENT_CELL_CLICK,
+                e => {
 
-	getUpdateRequestData() {
-		return {
-			...super.getUpdateRequestData(),
-			max_items: this.#items_max_count,
-			with_config: this.#honeycomb === null ? 1 : undefined
-		};
-	}
+                    this.#selected_hostid = e.detail.hostid;
+                    this.#selected_itemid = e.detail.itemid;
 
-	setContents(response) {
-		if (this.#honeycomb === null) {
-			const padding = {
-				vertical: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V,
-				horizontal: CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H,
-			};
+                    const cellData = this.#cells_data.get(this.#selected_itemid);
+                    if (!cellData) {
+                        return;
+                    }
 
-			this.#honeycomb = new CSVGCustomHoney(padding, response.config);
-			
-			// --- MATA-BARRAS ---
-			const svgElement = this.#honeycomb.getSVGElement();
-			svgElement.style.display = 'block';
-			svgElement.style.overflow = 'hidden';
-			
-			this._body.prepend(svgElement);
-			this._body.style.overflow = 'hidden';
+                    const itemValue = cellData.value;
+                    const widgetName = this.getName();
 
-			this.#honeycomb.setSize(super._getContentsSize());
+                    // UX: bloqueio imediato no frontend
+                    if (parseFloat(itemValue) === 0) {
+                        alert('Não é possível criar ticket quando o valor é 0.');
+                        return;
+                    }
 
-			// --- CLIQUE PARA O JIRA ---
-			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_CLICK, e => {
-					this.#selected_hostid = e.detail.hostid;
-					this.#selected_itemid = e.detail.itemid;
-					this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
+                    const confirmar = confirm('Deseja criar um ticket no Jira?');
+                    if (!confirmar) {
+                        return;
+                    }
 
-					const cellData = this.#cells_data.get(this.#selected_itemid);
-					const hostName = cellData.primary_label.replace(/\n/g, ' ').trim(); 
-					const itemValue = cellData.value; 
-					const widgetName = this.getName(); 
+                    fetch('zabbix.php?action=widget.honey_custom.jira', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            hostid: this.#selected_hostid,
+                            value: itemValue,
+                            widget: widgetName
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            this._startUpdating();
+                        }
+                        else {
+                            alert('Erro: ' + data.message);
+                        }
+                    })
+                    .catch(() => {
+                        alert('Erro na comunicação com o backend.');
+                    });
 
-					const querCriar = confirm(`Deseja criar um ticket no Jira para ${hostName}?`);
+                    this.#broadcast();
+                }
+            );
 
-					if (querCriar) {
-						fetch('zabbix.php?action=widget.honey_custom.jira', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ host: hostName, value: itemValue, widget: widgetName })
-						})
-						.then(res => res.json())
-						.then(data => {
-							if(data.success) {
-								alert(data.message);
-								this._startUpdating(); // Força o refresh para pintar de Azul imediatamente!
-							} else {
-								alert("Erro: " + data.message);
-							}
-						})
-						.catch(err => alert("Erro na comunicação."));
-					}
-					this.#broadcast();
-			});
+            this.#honeycomb.getSVGElement().addEventListener(
+                CSVGCustomHoney.EVENT_CELL_ENTER,
+                () => {
+                    clearTimeout(this.#interacting_timeout_id);
+                    this.#user_interacting = true;
+                }
+            );
 
-			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_ENTER, e => {
-				clearTimeout(this.#interacting_timeout_id);
-				this.#user_interacting = true;
-			});
+            this.#honeycomb.getSVGElement().addEventListener(
+                CSVGCustomHoney.EVENT_CELL_LEAVE,
+                () => {
+                    this.#interacting_timeout_id = setTimeout(() => {
+                        this.#user_interacting = false;
+                    }, 1000);
+                }
+            );
+        }
 
-			this.#honeycomb.getSVGElement().addEventListener(CSVGCustomHoney.EVENT_CELL_LEAVE, e => {
-				this.#interacting_timeout_id = setTimeout(() => {
-					this.#user_interacting = false;
-				}, 1000);
-			});
-		}
+        // =========================================================
+        // DESENHO DAS CÉLULAS
+        // =========================================================
+        const applyDataAndDraw = () => {
 
-		// --- FUNÇÃO PARA DESENHAR OS DADOS ---
-		const applyDataAndDraw = () => {
-			this.#items_loaded_count = response.cells.length;
-			this.#honeycomb.setValue({ cells: response.cells });
+            this.#items_loaded_count = response.cells.length;
+            this.#honeycomb.setValue({ cells: response.cells });
 
-			if (this.#items_loaded_count === 0) return;
+            if (this.#items_loaded_count === 0) return;
 
-			this.#cells_data.clear();
-			response.cells.forEach(cell => this.#cells_data.set(cell.itemid, cell));
+            this.#cells_data.clear();
+            response.cells.forEach(cell => {
+                this.#cells_data.set(cell.itemid, cell);
+            });
 
-			if (this.isReferred() && (this.isFieldsReferredDataUpdated() || !this.hasEverUpdated())) {
-				if (this.#selected_itemid === null || (!this.#hasSelectable() && !this.#selectItemidByKey())) {
-					const selected_cell = this.#getDefaultSelectable();
-					if (selected_cell !== null) {
-						this.#selected_hostid = selected_cell.hostid;
-						this.#selected_itemid = selected_cell.itemid;
-						this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
-					}
-				}
-				this.#honeycomb.selectCell(this.#selected_itemid);
-				this.#broadcast();
-			} else if (this.#selected_itemid !== null) {
-				if (!this.#hasSelectable() && this.#selectItemidByKey()) {
-					this.#broadcast();
-				}
-				this.#honeycomb.selectCell(this.#selected_itemid);
-			}
-		};
+            if (this.#selected_itemid !== null) {
+                this.#honeycomb.selectCell(this.#selected_itemid);
+            }
+        };
 
-		// --- INTERCETAR E PINTAR COM BASE NO BLOCO DE NOTAS ---
-		const zeroHosts = response.cells
-			.filter(c => parseFloat(c.value) === 0)
-			.map(c => c.primary_label.replace(/\n/g, ' ').trim());
+        applyDataAndDraw();
+    }
 
-		fetch('zabbix.php?action=widget.honey_custom.tickets', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ zero_hosts: zeroHosts })
-		})
-		.then(res => res.json())
-		.then(tickets => {
-			response.cells.forEach(cell => {
-				const hostName = cell.primary_label.replace(/\n/g, ' ').trim();
-				if (tickets[hostName] && parseFloat(cell.value) > 0) {
-					cell.bg_color = '2196F3'; // Azul estilo Zabbix
-					cell.primary_label += `\n👁️ ${tickets[hostName].user}`;
-				}
-			});
-			applyDataAndDraw();
-		})
-		.catch(err => {
-			// Em caso de erro do ficheiro, desenha o favo normalmente na mesma
-			applyDataAndDraw();
-		});
-	}
+    #broadcast() {
+        this.broadcast({
+            [CWidgetsData.DATA_TYPE_HOST_ID]: [this.#selected_hostid],
+            [CWidgetsData.DATA_TYPE_HOST_IDS]: [this.#selected_hostid],
+            [CWidgetsData.DATA_TYPE_ITEM_ID]: [this.#selected_itemid],
+            [CWidgetsData.DATA_TYPE_ITEM_IDS]: [this.#selected_itemid]
+        });
+    }
 
-	#selectItemidByKey() {
-		for (let [itemid, cell] of this.#cells_data) {
-			if (cell.key_ === this.#selected_key_) {
-				this.#selected_itemid = itemid;
-				this.#selected_hostid = cell.hostid;
-				return true;
-			}
-		}
-		return false;
-	}
+    #getItemsMaxCount() {
+        let { width, height } = super._getContentsSize();
 
-	#broadcast() {
-		this.broadcast({
-			[CWidgetsData.DATA_TYPE_HOST_ID]: [this.#selected_hostid],
-			[CWidgetsData.DATA_TYPE_HOST_IDS]: [this.#selected_hostid],
-			[CWidgetsData.DATA_TYPE_ITEM_ID]: [this.#selected_itemid],
-			[CWidgetsData.DATA_TYPE_ITEM_IDS]: [this.#selected_itemid]
-		});
-	}
+        width -= CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H * 2;
+        height -= CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V * 2;
 
-	#getDefaultSelectable() {
-		return this.#honeycomb.getCellsData().length > 0
-			? this.#honeycomb.getCellsData()[0]
-			: null;
-	}
+        const { max_rows, max_columns } =
+            CSVGCustomHoney.getContainerMaxParams({ width, height });
 
-	#hasSelectable() {
-		return this.#cells_data.has(this.#selected_itemid);
-	}
+        return Math.min(this.#items_max_count, max_rows * max_columns);
+    }
 
-	onReferredUpdate() {
-		if (this.#items_loaded_count === 0 || this.#selected_itemid !== null) {
-			return;
-		}
+    onClearContents() {
+        if (this.#honeycomb !== null) {
+            this.#honeycomb.destroy();
+            this.#honeycomb = null;
+        }
+    }
 
-		const selected_cell = this.#getDefaultSelectable();
-
-		if (selected_cell !== null) {
-			this.#selected_hostid = selected_cell.hostid;
-			this.#selected_itemid = selected_cell.itemid;
-			this.#selected_key_ = this.#cells_data.get(this.#selected_itemid).key_;
-
-			this.#honeycomb.selectCell(this.#selected_itemid);
-			this.#broadcast();
-		}
-	}
-
-	onClearContents() {
-		if (this.#honeycomb !== null) {
-			this.#honeycomb.destroy();
-			this.#honeycomb = null;
-		}
-	}
-
-	onDestroy() {
-		this.clearContents();
-	}
-
-	onFeedback({type, value, descriptor}) {
-		if (type === CWidgetsData.DATA_TYPE_ITEM_ID) {
-			return this.#honeycomb.selectCell(value);
-		}
-		return false;
-	}
-
-	getActionsContextMenu({can_copy_widget, can_paste_widget}) {
-		const menu = super.getActionsContextMenu({can_copy_widget, can_paste_widget});
-
-		if (this.isEditMode()) {
-			return menu;
-		}
-
-		let menu_actions = null;
-
-		for (const search_menu_actions of menu) {
-			if ('label' in search_menu_actions && search_menu_actions.label === t('Actions')) {
-				menu_actions = search_menu_actions;
-				break;
-			}
-		}
-
-		if (menu_actions === null) {
-			menu_actions = {
-				label: t('Actions'),
-				items: []
-			};
-			menu.unshift(menu_actions);
-		}
-
-		menu_actions.items.push({
-			label: t('Download image'),
-			disabled: this.#honeycomb === null,
-			clickCallback: () => {
-				downloadSvgImage(this.#honeycomb.getSVGElement(), 'image.png');
-			}
-		});
-
-		return menu;
-	}
-
-	hasPadding() {
-		return false;
-	}
-
-	#getItemsMaxCount() {
-		let {width, height} = super._getContentsSize();
-
-		width -= CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_H * 2;
-		height -= CWidgetCustomHoney.ZBX_STYLE_DASHBOARD_WIDGET_PADDING_V * 2;
-
-		const {max_rows, max_columns} = CSVGCustomHoney.getContainerMaxParams({width, height});
-
-		return Math.min(this.#items_max_count, max_rows * max_columns);
-	}
+    onDestroy() {
+        this.clearContents();
+    }
 }

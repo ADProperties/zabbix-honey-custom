@@ -3,8 +3,8 @@
 namespace Modules\HoneyCustom\Actions;
 
 use CController;
-use CControllerResponseData;
 use CWebUser;
+use API;
 
 class JiraTicket extends CController {
 
@@ -15,210 +15,120 @@ class JiraTicket extends CController {
     protected function checkInput(): bool { return true; }
     protected function checkPermissions(): bool { return true; }
 
-    private function normalizar($str) {
-        $str = htmlentities($str, ENT_QUOTES, 'UTF-8');
-        $str = preg_replace(
-            '~&amp;([a-z]{1,2})(acute|cedil|circ|grave|lig|orn|ring|slash|th|tilde|uml);~i',
-            '$1',
-            $str
-        );
-        $str = html_entity_decode($str, ENT_QUOTES, 'UTF-8');
-        return str_replace([' ', '-', '.'], '', strtolower($str));
-    }
-
     protected function doAction(): void {
 
         // =========================================================
-        // 0. INPUT
+        // INPUT
         // =========================================================
         $input  = json_decode(file_get_contents('php://input'), true);
-        $host   = $input['host']   ?? 'Desconhecido';
+        $hostid = $input['hostid'] ?? null;
         $value  = $input['value']  ?? '0';
         $widget = $input['widget'] ?? 'Monitorização';
 
-        // =========================================================
-        // 0.1 BLOQUEIO TOTAL — NÃO CRIAR TICKET SE VALOR = 0
-        // =========================================================
+        if (!$hostid) {
+            echo json_encode(['success' => false, 'message' => 'Host inválido']);
+            exit;
+        }
+
         if ((float)$value === 0.0) {
-            header('Content-Type: application/json');
             echo json_encode([
                 'success' => false,
                 'message' => 'Não é possível criar ticket quando o valor é 0.'
             ]);
-            exit();
+            exit;
         }
 
         // =========================================================
-        // 1. CONFIGURAÇÕES JIRA / CONFLUENCE
+        // BUSCAR HOST NAME E TAG CLIENT
         // =========================================================
-        $jira_url  = 'https://glintthsdev.atlassian.net';
-        $jira_user = 'david.dias@glintt.com';
+        $hostName = null;
+        $clientName = null;
 
-        // ⚠️ COLOCA AQUI O TOKEN REAL
-        $jira_token = '';
-
-        $jira_token = trim(stripslashes($jira_token));
-
-        $project_key        = 'GX';
-        $issue_type         = 'Monitorização';
-        $confluence_page_id = '322404356';
-        $client_field_id    = 'customfield_10139';
-        $capa_field_id      = 'customfield_10683';
-
-        $auth = base64_encode($jira_user . ':' . $jira_token);
-        $capaEncontrada = null;
-
-        // =========================================================
-        // 2. BUSCA CAPA NO CONFLUENCE
-        // =========================================================
-        $ch = curl_init(
-            $jira_url . "/wiki/rest/api/content/{$confluence_page_id}?expand=body.storage"
-        );
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Basic ' . $auth
+        $hosts = API::Host()->get([
+            'output' => ['name'],
+            'hostids' => [$hostid],
+            'selectTags' => ['tag', 'value']
         ]);
-        $confResp = curl_exec($ch);
-        curl_close($ch);
 
-        if ($confResp) {
-            $confJson = json_decode($confResp, true);
-            $html = $confJson['body']['storage']['value'] ?? '';
+        if ($hosts) {
+            $hostName = $hosts[0]['name'];
 
-            if ($html !== '') {
-                $dom = new \DOMDocument();
-                @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
-                $tables = $dom->getElementsByTagName('table');
-
-                if ($tables->length > 0) {
-                    $rows = $tables->item(0)->getElementsByTagName('tr');
-
-                    foreach ($rows as $row) {
-                        $cols = $row->getElementsByTagName('td');
-                        if ($cols->length >= 2) {
-                            $colNome  = trim($cols->item(0)->textContent);
-                            $colCapa  = trim($cols->item(1)->textContent);
-                            $colSigla = ($cols->length >= 5)
-                                ? trim($cols->item(4)->textContent)
-                                : '';
-
-                            $normBusca = $this->normalizar($host);
-                            $normNome  = $this->normalizar($colNome);
-                            $normSigla = $this->normalizar($colSigla);
-
-                            if (
-                                $normNome === $normBusca ||
-                                ($normSigla !== '' && $normSigla === $normBusca) ||
-                                strpos($normNome, $normBusca) !== false
-                            ) {
-                                if ($colCapa !== '' && $colCapa !== 'N/D') {
-                                    $capaEncontrada = $colCapa;
-                                }
-                                break;
-                            }
-                        }
-                    }
+            foreach ($hosts[0]['tags'] as $tag) {
+                if (strcasecmp($tag['tag'], 'Client') === 0) {
+                    $clientName = $tag['value'];
+                    break;
                 }
             }
         }
 
-        // =========================================================
-        // 3. UTILIZADOR LOGADO NO ZABBIX → JIRA
-        // =========================================================
-        $zabbix_user_name = CWebUser::$data['name'].' '.CWebUser::$data['surname'];
-        $userId = null;
-
-        $chU = curl_init(
-            $jira_url . "/rest/api/3/user/search?query=" . urlencode($zabbix_user_name)
-        );
-        curl_setopt($chU, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($chU, CURLOPT_HTTPHEADER, [
-            'Authorization: Basic ' . $auth
-        ]);
-        $userResp = curl_exec($chU);
-        curl_close($chU);
-
-        if ($userResp) {
-            $users = json_decode($userResp, true);
-            if (is_array($users) && count($users) > 0) {
-                $userId = $users[0]['accountId'] ?? null;
-            }
+        if (!$clientName) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'O host não tem a TAG "Client" definida.'
+            ]);
+            exit;
         }
 
         // =========================================================
-        // 4. CRIAR TICKET NO JIRA
+        // CONFIGURAÇÕES JIRA
+        // =========================================================
+        $jira_url  = 'https://glintthsdev.atlassian.net';
+        $jira_user = 'david.dias@glintt.com';
+        $jira_token = ''; // <<<<<< TOKEN AQUI
+
+        $project_key     = 'GX';
+        $issue_type      = 'Monitorização';
+        $client_field_id = 'customfield_10139';
+
+        $auth = base64_encode($jira_user . ':' . $jira_token);
+
+        // =========================================================
+        // CRIAR TICKET
         // =========================================================
         $description =
-            "Ticket criado manualmente via Dashboard (Custom Honey).\n\n" .
-            "*Instituição:* {$host}\n" .
-            "*Métrica avaliada:* {$widget}\n" .
-            "*Valor atual:* *{$value}*";
+            "Ticket criado manualmente via Dashboard.\n\n".
+            "*Host:* {$hostName}\n".
+            "*Cliente:* {$clientName}\n".
+            "*Métrica:* {$widget}\n".
+            "*Valor:* {$value}";
 
         $fields = [
             'project'     => ['key' => $project_key],
             'issuetype'   => ['name' => $issue_type],
-            'summary'     => "{$widget} - {$host} ({$value})",
-            'description' => $description
+            'summary'     => "{$widget} - {$clientName}",
+            'description' => $description,
+            $client_field_id => ['value' => $clientName]
         ];
-
-        if ($userId) {
-            $fields['reporter'] = ['accountId' => $userId];
-            $fields['assignee'] = ['accountId' => $userId];
-        }
 
         $payload = ['fields' => $fields];
 
-        if ($client_field_id) {
-            $payload['fields'][$client_field_id] = ['value' => $host];
-        }
-        if ($capa_field_id && $capaEncontrada) {
-            $payload['fields'][$capa_field_id] = $capaEncontrada;
-        }
-
-        $chJ = curl_init($jira_url . "/rest/api/2/issue");
-        curl_setopt($chJ, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($chJ, CURLOPT_POST, true);
-        curl_setopt($chJ, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($chJ, CURLOPT_HTTPHEADER, [
-            'Authorization: Basic ' . $auth,
-            'Content-Type: application/json'
+        $ch = curl_init($jira_url . '/rest/api/2/issue');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Basic ' . $auth,
+                'Content-Type: application/json'
+            ]
         ]);
 
-        $jiraResp = curl_exec($chJ);
-        $httpCode = curl_getinfo($chJ, CURLINFO_HTTP_CODE);
-        curl_close($chJ);
+        $resp = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
 
-        // =========================================================
-        // 5. RESPOSTA
-        // =========================================================
-        header('Content-Type: application/json');
-
-        if ($httpCode >= 200 && $httpCode < 300) {
-            $jiraData = json_decode($jiraResp, true);
-
-            $file = __DIR__ . '/../tickets.json';
-            $tickets = file_exists($file)
-                ? json_decode(file_get_contents($file), true)
-                : [];
-
-            $tickets[$host] = [
-                'user' => CWebUser::$data['name'].' '.CWebUser::$data['surname']
-            ];
-
-            file_put_contents($file, json_encode($tickets));
-
+        if ($code >= 200 && $code < 300) {
+            $data = json_decode($resp, true);
             echo json_encode([
                 'success' => true,
-                'message' => "Ticket {$jiraData['key']} criado com sucesso!"
+                'message' => "Ticket {$data['key']} criado com sucesso!"
             ]);
-        }
-        else {
+        } else {
             echo json_encode([
                 'success' => false,
-                'message' => "Erro no Jira: {$jiraResp}"
+                'message' => "Erro no Jira: {$resp}"
             ]);
         }
-
-        exit();
+        exit;
     }
 }
