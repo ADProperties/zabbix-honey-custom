@@ -91,7 +91,9 @@ class CWidgetCustomHoney extends CWidget {
             this.#honeycomb.setSize(super._getContentsSize());
 
             /* =========================================================
-               CLIQUE → CRIAR TICKET NO JIRA
+               CLIQUE NA CÉLULA
+               - se já há ticket: abre o Jira
+               - se não há ticket: cria
             ========================================================= */
             this.#honeycomb.getSVGElement().addEventListener(
                 CSVGCustomHoney.EVENT_CELL_CLICK,
@@ -104,10 +106,18 @@ class CWidgetCustomHoney extends CWidget {
                         return;
                     }
 
-                    const label = cell.primary_label.replace(/\n/g, ' ').trim();
+                    // Se já existe ticket, abre o Jira e não cria novo
+                    if (cell.jira_url) {
+                        window.open(cell.jira_url, '_blank');
+                        return;
+                    }
+
+                    const label = (cell.base_label ?? cell.primary_label)
+                        .replace(/\n/g, ' ')
+                        .trim();
+
                     const value = parseFloat(cell.value);
 
-                    // Bloqueio UX
                     if (value === 0) {
                         alert('Não é possível criar ticket quando o valor é 0.');
                         return;
@@ -127,15 +137,24 @@ class CWidgetCustomHoney extends CWidget {
                             widget: this.getName()
                         })
                     })
-                    .then(res => res.json())
+                    .then(async res => {
+                        const text = await res.text();
+
+                        try {
+                            return JSON.parse(text);
+                        } catch (e) {
+                            throw new Error(text);
+                        }
+                    })
                     .then(data => {
                         alert(data.message);
+
                         if (data.success) {
                             this._startUpdating();
                         }
                     })
-                    .catch(() => {
-                        alert('Erro na comunicação com o backend.');
+                    .catch(err => {
+                        alert('Erro real do backend: ' + err.message);
                     });
                 }
             );
@@ -163,36 +182,61 @@ class CWidgetCustomHoney extends CWidget {
         ========================================================= */
         this.#items_loaded_count = response.cells.length;
 
+        // Guardar referência original das células
         this.#cells_data.clear();
         response.cells.forEach(cell => {
+            cell.base_label = cell.primary_label.replace(/\n/g, ' ').trim();
+            cell.jira_url = null;
+            cell.ticket_user = null;
+            cell.ticket_key = null;
             this.#cells_data.set(cell.itemid, cell);
         });
 
-        // Hosts que voltaram a zero → fechar localmente
+        // Hosts que voltaram a zero → remover do tickets.json
         const zeroHosts = response.cells
             .filter(c => parseFloat(c.value) === 0)
-            .map(c => c.primary_label.replace(/\n/g, ' ').trim());
+            .map(c => c.base_label);
 
         fetch('zabbix.php?action=widget.honey_custom.tickets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ zero_hosts: zeroHosts })
         })
-        .then(res => res.json())
+        .then(async res => {
+            const text = await res.text();
+
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                throw new Error(text);
+            }
+        })
         .then(tickets => {
             response.cells.forEach(cell => {
-                const label = cell.primary_label.replace(/\n/g, ' ').trim();
+                const label = cell.base_label;
 
                 if (tickets[label] && parseFloat(cell.value) > 0) {
+                    const jiraKey = tickets[label].jira;
+                    const jiraUrl = `https://glintthsdev.atlassian.net/browse/${jiraKey}`;
+
                     cell.bg_color = '2196F3';
-                    cell.primary_label += `\n👁️ ${tickets[label].user}`;
+                    cell.primary_label = `${label}\n👁️ ${tickets[label].user}`;
+                    cell.jira_url = jiraUrl;
+                    cell.ticket_user = tickets[label].user;
+                    cell.ticket_key = jiraKey;
+                }
+                else {
+                    cell.primary_label = label;
+                    cell.jira_url = null;
+                    cell.ticket_user = null;
+                    cell.ticket_key = null;
                 }
             });
 
             this.#honeycomb.setValue({ cells: response.cells });
         })
-        .catch(() => {
-            // fallback — desenha na mesma
+        .catch(err => {
+            console.error('Erro ao obter tickets:', err);
             this.#honeycomb.setValue({ cells: response.cells });
         });
     }
