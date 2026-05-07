@@ -132,6 +132,7 @@ class CWidgetCustomHoney extends CWidget {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             hostid: this.#selected_hostid,
+                            itemid: this.#selected_itemid,
                             label: label,
                             value: value,
                             widget: this.getName()
@@ -185,22 +186,22 @@ class CWidgetCustomHoney extends CWidget {
         // Guardar referência original das células
         this.#cells_data.clear();
         response.cells.forEach(cell => {
-            cell.base_label = cell.primary_label.replace(/\n/g, ' ').trim();
+            cell.base_label = (cell.primary_label ?? '').replace(/\n/g, ' ').trim();
             cell.jira_url = null;
             cell.ticket_user = null;
             cell.ticket_key = null;
             this.#cells_data.set(cell.itemid, cell);
         });
 
-        // Hosts que voltaram a zero → remover do tickets.json
-        const zeroHosts = response.cells
+        // Itens que voltaram a zero -> remover do tickets.json
+        const zeroItemids = response.cells
             .filter(c => parseFloat(c.value) === 0)
-            .map(c => c.base_label);
+            .map(c => String(c.itemid));
 
         fetch('zabbix.php?action=widget.honey_custom.tickets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ zero_hosts: zeroHosts })
+            body: JSON.stringify({ zero_itemids: zeroItemids })
         })
         .then(async res => {
             const text = await res.text();
@@ -214,15 +215,16 @@ class CWidgetCustomHoney extends CWidget {
         .then(tickets => {
             response.cells.forEach(cell => {
                 const label = cell.base_label;
+                const ticket = tickets[String(cell.itemid)];
 
-                if (tickets[label] && parseFloat(cell.value) > 0) {
-                    const jiraKey = tickets[label].jira;
+                if (ticket && parseFloat(cell.value) > 0) {
+                    const jiraKey = ticket.jira;
                     const jiraUrl = `https://glintthsdev.atlassian.net/browse/${jiraKey}`;
 
                     cell.bg_color = '2196F3';
-                    cell.primary_label = `${label}\n👁️ ${tickets[label].user}`;
+                    cell.primary_label = `${label}\n👁️ ${ticket.user}`;
                     cell.jira_url = jiraUrl;
-                    cell.ticket_user = tickets[label].user;
+                    cell.ticket_user = ticket.user;
                     cell.ticket_key = jiraKey;
                 }
                 else {
