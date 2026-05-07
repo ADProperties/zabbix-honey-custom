@@ -199,9 +199,9 @@ class CWidgetCustomHoney extends CWidget {
             .map(c => String(c.itemid));
 
         fetch('zabbix.php?action=widget.honey_custom.tickets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ zero_itemids: zeroItemids })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
         })
         .then(async res => {
             const text = await res.text();
