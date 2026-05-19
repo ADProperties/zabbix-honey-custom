@@ -98,8 +98,8 @@ class GetTickets extends CController {
 
             $isClosed =
                 strpos($statusLower, 'done') !== false ||
-                strpos($statusLower, 'close') !== false ||
-                strpos($statusLower, 'resolv') !== false ||
+                strpos($statusLower, 'Closed') !== false ||
+                strpos($statusLower, 'Fechado') !== false ||
                 strpos($statusLower, 'finished') !== false;
 
             if (!$isClosed) {
